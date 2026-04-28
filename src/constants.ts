@@ -9,6 +9,11 @@ export const CONFIG_LIST = [
     'setting_enable_datetime_format',
     'setting_format_filename',
     'setting_format_datetime',
+    'setting_profile_bulk_media_filter',
+    'setting_profile_bulk_save_as_zip',
+    'setting_profile_bulk_zip_post_folders',
+    'setting_profile_bulk_include_reels',
+    'setting_profile_bulk_throttle_ms',
 ];
 
 export enum MediaType {
@@ -21,6 +26,8 @@ export enum MediaType {
 
 export const DEFAULT_FILENAME_FORMAT = `{username}-{id}-{datetime}`;
 export const DEFAULT_DATETIME_FORMAT = 'YYYYMMDD_HHmmss';
+export const DEFAULT_PROFILE_BULK_MEDIA_FILTER = 'both';
+export const DEFAULT_PROFILE_BULK_THROTTLE_MS = 500;
 
 export const EXTENSION_ID = 'oejjpeobjicdpgaijialfpfcbdnanajk';
 

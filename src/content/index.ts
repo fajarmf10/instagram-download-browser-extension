@@ -1,5 +1,6 @@
 import { CLASS_CUSTOM_BUTTON } from '../constants';
 import { addCustomBtn, addVideoDownloadCoverBtn, handleVideoCoverDownloadBtn, onClickHandler } from './button';
+import { ensureProfileBulkDownloadButton } from './profile';
 import { handleThreads } from './threads';
 import { checkType } from './utils/fn';
 import { handleReelsVideoVolumeChange, handleStoriesVideoVolumeChange, handleVideo } from "./utils/video";
@@ -190,12 +191,15 @@ function processPage() {
     }
 
     // user Avatar
-    const profileHeader = document.querySelector('section>main>div>header>section:nth-child(2)');
+    const profileHeader = document.querySelector<HTMLElement>('section>main>div>header>section:nth-child(2)');
     if (profileHeader && profileHeader.getElementsByClassName(CLASS_CUSTOM_BUTTON).length === 0) {
         const profileBtn = profileHeader.querySelector('svg circle');
         if (profileBtn) {
             addCustomBtn(profileBtn.parentNode?.parentNode?.parentNode, iconColor);
         }
+    }
+    if (profileHeader && pathnameList.length === 1) {
+        ensureProfileBulkDownloadButton(profileHeader);
     }
 
     // user's profile page video cover

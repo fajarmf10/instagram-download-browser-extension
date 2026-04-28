@@ -2,6 +2,8 @@ import {
     CONFIG_LIST,
     DEFAULT_DATETIME_FORMAT,
     DEFAULT_FILENAME_FORMAT,
+    DEFAULT_PROFILE_BULK_MEDIA_FILTER,
+    DEFAULT_PROFILE_BULK_THROTTLE_MS,
     MESSAGE_OPEN_URL,
     MESSAGE_ZIP_DOWNLOAD
 } from '../constants';
@@ -14,6 +16,8 @@ browser.runtime.onInstalled.addListener(async () => {
     const defaults: Record<string, any> = {
         setting_format_filename: DEFAULT_FILENAME_FORMAT,
         setting_format_datetime: DEFAULT_DATETIME_FORMAT,
+        setting_profile_bulk_media_filter: DEFAULT_PROFILE_BULK_MEDIA_FILTER,
+        setting_profile_bulk_throttle_ms: DEFAULT_PROFILE_BULK_THROTTLE_MS,
     };
 
     const updates: Record<string, any> = {};

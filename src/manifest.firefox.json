@@ -12,7 +12,7 @@
     "128": "icons/icon-128.png"
   },
   "options_ui": {
-    "open_in_tab": false,
+    "open_in_tab": true,
     "page": "options/index.html"
   },
   "action": {

@@ -1,12 +1,21 @@
 import type { ReelsMedia } from '../types/global';
 import { findValueByKey, saveHighlights, saveProfileReel, saveReels, saveStories } from './fn';
-import { CONFIG_LIST, MESSAGE_OPEN_URL, DEFAULT_FILENAME_FORMAT, DEFAULT_DATETIME_FORMAT } from '../constants';
+import {
+    CONFIG_LIST,
+    DEFAULT_DATETIME_FORMAT,
+    DEFAULT_FILENAME_FORMAT,
+    DEFAULT_PROFILE_BULK_MEDIA_FILTER,
+    DEFAULT_PROFILE_BULK_THROTTLE_MS,
+    MESSAGE_OPEN_URL,
+} from '../constants';
 
 chrome.runtime.onInstalled.addListener(async () => {
     const result = await chrome.storage.sync.get(CONFIG_LIST);
     const defaults: Record<string, any> = {
         setting_format_filename: DEFAULT_FILENAME_FORMAT,
         setting_format_datetime: DEFAULT_DATETIME_FORMAT,
+        setting_profile_bulk_media_filter: DEFAULT_PROFILE_BULK_MEDIA_FILTER,
+        setting_profile_bulk_throttle_ms: DEFAULT_PROFILE_BULK_THROTTLE_MS,
     };
 
     const updates: Record<string, any> = {};
