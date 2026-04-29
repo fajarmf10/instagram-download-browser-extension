@@ -1,12 +1,29 @@
 import type { ReelsMedia } from '../types/global';
-import { findValueByKey, saveHighlights, saveProfileReel, saveReels, saveStories } from './fn';
-import { CONFIG_LIST, MESSAGE_OPEN_URL, DEFAULT_FILENAME_FORMAT, DEFAULT_DATETIME_FORMAT } from '../constants';
+import {
+    findValueByKey,
+    getProfilePictureUrlFromApiData,
+    saveHighlights,
+    saveProfilePicture,
+    saveProfileReel,
+    saveReels,
+    saveStories
+} from './fn';
+import {
+    CONFIG_LIST,
+    DEFAULT_DATETIME_FORMAT,
+    DEFAULT_FILENAME_FORMAT,
+    DEFAULT_PROFILE_BULK_MEDIA_FILTER,
+    DEFAULT_PROFILE_BULK_THROTTLE_MS,
+    MESSAGE_OPEN_URL,
+} from '../constants';
 
 chrome.runtime.onInstalled.addListener(async () => {
     const result = await chrome.storage.sync.get(CONFIG_LIST);
     const defaults: Record<string, any> = {
         setting_format_filename: DEFAULT_FILENAME_FORMAT,
         setting_format_datetime: DEFAULT_DATETIME_FORMAT,
+        setting_profile_bulk_media_filter: DEFAULT_PROFILE_BULK_MEDIA_FILTER,
+        setting_profile_bulk_throttle_ms: DEFAULT_PROFILE_BULK_THROTTLE_MS,
     };
 
     const updates: Record<string, any> = {};
@@ -46,6 +63,24 @@ async function addThreads(data: any[]) {
     await chrome.storage.local.set({ threads: Array.from(newMap) });
 }
 
+const allowedInstagramOrigins = new Set(['https://www.instagram.com']);
+
+function isAllowedInstagramSender(sender: chrome.runtime.MessageSender) {
+    return Boolean(sender.origin && allowedInstagramOrigins.has(sender.origin));
+}
+
+function parseProfilePictureMessage(data: unknown) {
+    if (typeof data !== 'string') return undefined;
+
+    try {
+        const parsedData = JSON.parse(data);
+        return getProfilePictureUrlFromApiData(parsedData) ? parsedData : undefined;
+    } catch (error) {
+        console.log(`Ignored malformed profile picture data: ${error}`);
+        return undefined;
+    }
+}
+
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
     // console.log(message, sender);
     const { type, data, api } = message;
@@ -71,7 +106,17 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
     }
 
     (async () => {
-        if (type === 'stories') {
+        if (type === 'profile_pic') {
+            if (!isAllowedInstagramSender(sender)) {
+                sendResponse();
+                return;
+            }
+
+            const parsedData = parseProfilePictureMessage(data);
+            if (parsedData) {
+                await saveProfilePicture(parsedData);
+            }
+        } else if (type === 'stories') {
             const {
                 stories_user_ids,
                 id_to_username_map

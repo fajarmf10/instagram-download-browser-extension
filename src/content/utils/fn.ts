@@ -30,7 +30,7 @@ async function forceDownload(blob: string, filename: string, extension: string) 
 const mediaInfoCache: Map<string, any> = new Map(); // key: media id, value: info json
 const mediaIdCache: Map<string, string> = new Map(); // key: post id, value: media id
 
-const findAppId = () => {
+export const findAppId = () => {
     const appIdPattern = /"X-IG-App-ID":"([\d]+)"/;
     const bodyScripts: NodeListOf<HTMLScriptElement> = document.querySelectorAll('body > script');
     for (let i = 0; i < bodyScripts.length; ++i) {
@@ -42,32 +42,39 @@ const findAppId = () => {
 };
 
 function findPostId(articleNode: HTMLElement) {
+    return findPostResource(articleNode)?.id ?? null;
+}
+
+function findPostResource(articleNode: HTMLElement): { id: string; type: 'p' | 'reel' } | null {
     const pathname = window.location.pathname;
     if (pathname.startsWith('/reels/')) {
-        return pathname.split('/')[2];
+        return { id: pathname.split('/')[2], type: 'reel' };
     } else if (pathname.startsWith('/stories/')) {
-        return pathname.split('/')[3];
+        return { id: pathname.split('/')[3], type: 'p' };
     } else if (pathname.startsWith('/reel/')) {
-        return pathname.split('/')[2];
+        return { id: pathname.split('/')[2], type: 'reel' };
+    } else if (pathname.startsWith('/p/')) {
+        return { id: pathname.split('/')[2], type: 'p' };
     }
-    const postIdPattern = /\/p\/([^/]+)\//;
+    const postIdPattern = /^\/(?:[^/]+\/)?(p|reel)\/([^/]+)\//;
     const aNodes = articleNode.querySelectorAll('a');
     for (let i = 0; i < aNodes.length; ++i) {
         const link = aNodes[i].getAttribute('href');
         if (link) {
             const match = link.match(postIdPattern);
-            if (match) return match[1];
+            if (match) return { id: match[2], type: match[1] as 'p' | 'reel' };
         }
     }
     return null;
 }
 
-const findMediaId = async (postId: string) => {
+const findMediaId = async (postId: string, resourceType: 'p' | 'reel' = 'p') => {
     const mediaIdPattern = /instagram:\/\/media\?id=(\d+)|["' ]media_id["' ]:["' ](\d+)["' ]/;
     const match = window.location.href.match(/www.instagram.com\/stories\/[^/]+\/(\d+)/);
     if (match) return match[1];
-    if (!mediaIdCache.has(postId)) {
-        const postUrl = `https://www.instagram.com/p/${postId}/`;
+    const cacheKey = `${resourceType}:${postId}`;
+    if (!mediaIdCache.has(cacheKey)) {
+        const postUrl = `https://www.instagram.com/${resourceType}/${postId}/`;
         const resp = await fetch(postUrl);
         const text = await resp.text();
         const idMatch = text.match(mediaIdPattern);
@@ -77,32 +84,19 @@ const findMediaId = async (postId: string) => {
             if (idMatch[i]) mediaId = idMatch[i];
         }
         if (!mediaId) return null;
-        mediaIdCache.set(postId, mediaId);
+        mediaIdCache.set(cacheKey, mediaId);
     }
-    return mediaIdCache.get(postId);
+    return mediaIdCache.get(cacheKey);
 };
 
-export const getImgOrVideoUrl = (item: Record<string, any>) => {
-    if ('video_versions' in item) {
-        return item.video_versions[0].url;
-    } else {
-        return item.image_versions2.candidates[0].url;
-    }
-};
-
-export const getDataFromAPI = async (articleNode: HTMLElement) => {
+async function getDataFromAPIByPostId(postId: string, resourceType: 'p' | 'reel' = 'p') {
     try {
         const appId = findAppId();
         if (!appId) {
             console.log('Cannot find appid');
             return null;
         }
-        const postId = findPostId(articleNode);
-        if (!postId) {
-            console.log('Cannot find post id');
-            return null;
-        }
-        const mediaId = await findMediaId(postId);
+        const mediaId = await findMediaId(postId, resourceType);
         if (!mediaId) {
             console.log('Cannot find media id');
             return null;
@@ -130,9 +124,56 @@ export const getDataFromAPI = async (articleNode: HTMLElement) => {
         const infoJson = mediaInfoCache.get(mediaId);
         return infoJson.items[0];
     } catch (e: any) {
+        console.log(`Uncaught in getDataFromAPIByPostId(): ${e}\n${e.stack}`);
+        return null;
+    }
+}
+
+export const getImgOrVideoUrl = (item: Record<string, any>) => {
+    if ('video_versions' in item) {
+        return item.video_versions[0].url;
+    } else {
+        return item.image_versions2.candidates[0].url;
+    }
+};
+
+export const getDataFromAPI = async (articleNode: HTMLElement) => {
+    try {
+        const postResource = findPostResource(articleNode);
+        if (!postResource) {
+            console.log('Cannot find post id');
+            return null;
+        }
+        return getDataFromAPIByPostId(postResource.id, postResource.type);
+    } catch (e: any) {
         console.log(`Uncaught in getUrlFromInfoApi(): ${e}\n${e.stack}`);
         return null;
     }
+};
+
+export const getAllMediaFromPostId = async (postId: string, resourceType: 'p' | 'reel' = 'p'): Promise<Record<string, any>[] | null> => {
+    const data = await getDataFromAPIByPostId(postId, resourceType);
+    if (!data) return null;
+
+    if ('carousel_media' in data) {
+        return data.carousel_media.map((item: Record<string, any>) => ({
+            ...item,
+            url: getImgOrVideoUrl(item),
+            taken_at: data.taken_at,
+            owner: item.owner?.username || data.owner?.username || 'unknown',
+            coauthor_producers: data.coauthor_producers?.map((i: any) => i.username) || [],
+            origin_data: data,
+        }));
+    }
+
+    return [
+        {
+            ...data,
+            url: getImgOrVideoUrl(data),
+            owner: data.owner?.username || 'unknown',
+            coauthor_producers: data.coauthor_producers?.map((i: any) => i.username) || [],
+        },
+    ];
 };
 
 export const getUrlFromInfoApi = async (articleNode: HTMLElement, mediaIdx = 0): Promise<Record<string, any> | null> => {
@@ -161,28 +202,70 @@ export const getUrlFromInfoApi = async (articleNode: HTMLElement, mediaIdx = 0):
     }
 };
 
-export async function downloadResource(params: DownloadParams) {
+export function normalizeContentType(contentType?: string | null) {
+    return (contentType || '').split(';')[0].trim().toLowerCase();
+}
+
+export function isAllowedMediaContentType(contentType?: string | null) {
+    const normalizedType = normalizeContentType(contentType);
+    return !normalizedType
+        || normalizedType.startsWith('image/')
+        || normalizedType.startsWith('video/')
+        || normalizedType === 'application/octet-stream';
+}
+
+export function assertAllowedMediaContentType(contentType?: string | null, context = 'Media') {
+    if (!isAllowedMediaContentType(contentType)) {
+        throw new Error(`${context} response was not media (${normalizeContentType(contentType)}).`);
+    }
+}
+
+export function assertValidMediaBlob(blob: Blob, contentType?: string | null, context = 'Media') {
+    if (blob.size === 0) {
+        throw new Error(`${context} response was empty.`);
+    }
+    assertAllowedMediaContentType(contentType, context);
+    assertAllowedMediaContentType(blob.type, context);
+}
+
+export async function downloadResource(params: DownloadParams & { signal?: AbortSignal }) {
     const { url } = params
     console.log(`Downloading ${url}`);
     const filename = await getFilenameFromUrl(params);
 
     if (url.startsWith('blob:')) {
         forceDownload(url, filename, 'mp4');
-        return;
+        return true;
     }
-    fetch(url, {
-        headers: new Headers({
-            Origin: location.origin,
-        }),
-        mode: 'cors',
-    })
-        .then((response) => response.blob())
-        .then((blob) => {
-            const extension = blob.type.split('/').pop();
-            const blobUrl = window.URL.createObjectURL(blob);
-            forceDownload(blobUrl, filename, extension || 'jpg');
-        })
-        .catch((e) => console.error(e));
+    try {
+        const response = await fetch(url, {
+            headers: new Headers({
+                Origin: location.origin,
+            }),
+            mode: 'cors',
+            signal: params.signal,
+        });
+        if (!response.ok) {
+            throw new Error(`Download request failed with status ${response.status}`);
+        }
+        assertAllowedMediaContentType(response.headers.get('content-type'), 'Download');
+        const blob = await response.blob();
+        if (!isAllowedMediaContentType(blob.type)) {
+            const message = (await blob.text()).slice(0, 160);
+            throw new Error(`Download returned text instead of media${message ? `: ${message}` : ''}`);
+        }
+        assertValidMediaBlob(blob, response.headers.get('content-type'), 'Download');
+        const extension = blob.type.split('/').pop()?.split(';')[0];
+        const blobUrl = window.URL.createObjectURL(blob);
+        forceDownload(blobUrl, filename, extension || 'jpg');
+        return true;
+    } catch (e: any) {
+        if (e?.name === 'AbortError') {
+            throw e;
+        }
+        console.error(e);
+        return false;
+    }
 }
 
 export const checkType = () => {

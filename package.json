@@ -5,10 +5,12 @@
   "main": "index.js",
   "type": "module",
   "scripts": {
-    "build:chrome": "npx tsc --noEmit && node esbuild.config.mjs chrome",
-    "build:ff": "npx tsc --noEmit && node esbuild.config.mjs firefox",
+    "build:chrome": "pnpm exec tsc --noEmit && node esbuild.config.mjs chrome",
+    "build:ff": "pnpm exec tsc --noEmit && node esbuild.config.mjs firefox",
+    "watch:chrome": "pnpm exec tsc --noEmit && node esbuild.config.mjs chrome --watch",
+    "watch:ff": "pnpm exec tsc --noEmit && node esbuild.config.mjs firefox --watch",
     "android": "node ./node_modules/web-ext/bin/web-ext.js run -t firefox-android --android-device=45lrfakru8a6kzyh --firefox-apk org.mozilla.fenix --source-dir ./dist/firefox",
-    "test": "echo \"Error: no test specified\" && exit 1",
+    "test": "vitest run",
     "lint": "npx eslint --fix"
   },
   "keywords": [
@@ -21,9 +23,9 @@
     "name": "Konka",
     "email": "1094918@gmail.com"
   },
-  "homepage": "https://github.com/TheKonka/instagram-download-browser-extension",
+  "homepage": "https://github.com/fajarmf10/instagram-download-browser-extension",
   "bugs": {
-    "url": "https://github.com/TheKonka/instagram-download-browser-extension/issues",
+    "url": "https://github.com/fajarmf10/instagram-download-browser-extension/issues",
     "email": "1094918@gmail.com"
   },
   "license": "SEE LICENSE IN LICENSE",
@@ -40,10 +42,12 @@
     "esbuild-sass-plugin": "^3.7.0",
     "eslint": "^10.2.0",
     "globals": "^17.4.0",
+    "jsdom": "^29.1.0",
     "sass": "^1.99.0",
     "sass-embedded": "^1.99.0",
     "typescript": "^6.0.2",
     "typescript-eslint": "^8.58.0",
+    "vitest": "^4.1.5",
     "web-ext": "^10.1.0"
   },
   "engines": {

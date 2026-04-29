@@ -3,45 +3,220 @@
 <head>
     <meta charset="utf-8"/>
     <meta content="width=device-width, initial-scale=1" name="viewport"/>
-    <title>settings</title>
+    <title>Instagram Downloader Settings</title>
     <link href="index.css" rel="stylesheet"/>
 </head>
 
 <body>
-<h1>Thank you for using this extension!</h1>
-
-<section class="container" id="settings">
-    <div class="warning section permissions-request" id="permissions-request">
-        <h3>Permissions are required to continue</h3>
-        <p>This extension must be assigned the following manifest v3 permissions to work properly:</p>
-        <ul>
-            <li>Assign network request rules on <code>www.instagram.com</code> and <code>www.threads.com</code></li>
-        </ul>
-        <div class="option">
-            <button autofocus class="primary permissions-request" id="enable-permissions">
-                Enable permissions required for <span
-                    style="white-space: nowrap">instagram-download-browser-extension</span> to work
-            </button>
-        </div>
+<header class="page-header">
+    <div>
+        <p class="eyebrow">Extension Configuration</p>
+        <h1>Instagram Downloader Settings</h1>
+        <p class="lede">Manage download buttons, filenames, video behavior, and Threads support from one full page.</p>
     </div>
-</section>
+    <a class="source-link" href="https://github.com/fajarmf10/instagram-download-browser-extension" rel="noopener noreferrer" target="_blank">
+        GitHub
+    </a>
+</header>
 
-<p>For more options, please open the popup by clicking the extension's action icon.</p>
+<main class="layout">
+    <aside class="sidebar" aria-label="Settings sections">
+        <a href="#buttons">Buttons</a>
+        <a href="#profile-bulk">Profile ZIP</a>
+        <a href="#filenames">Filenames</a>
+        <a href="#video">Video</a>
+        <a href="#threads">Threads</a>
+    </aside>
 
-<section class="container" id="about">
-    <h2>About / License</h2>
+    <div class="content">
+        <section class="settings-section" id="buttons">
+            <div class="section-heading">
+                <p class="section-kicker">Buttons</p>
+                <h2>Download Controls</h2>
+            </div>
 
-    <p>
-        See
-        <a href="https://github.com/TheKonka/instagram-download-browser-extension" rel="noopener noreferrer"
-           target="_blank"
-        >Source code on Github</a
-        >
-    </p>
-    <p>Please consider starring the project to show your ❤️ and support.</p>
+            <div class="setting-row">
+                <div>
+                    <label for="setting_show_open_in_new_tab_icon">Open in new tab button</label>
+                    <p>Show a shortcut next to each download button for opening media directly.</p>
+                </div>
+                <label class="switch" aria-label="Open in new tab button">
+                    <input data-setting id="setting_show_open_in_new_tab_icon" type="checkbox"/>
+                    <span></span>
+                </label>
+            </div>
 
-    <p><strong>Copyright 2026</strong></p>
-</section>
+            <div class="setting-row">
+                <div>
+                    <label for="setting_show_zip_download_icon">Download ZIP button</label>
+                    <p>Show a ZIP option for posts with multiple media items.</p>
+                </div>
+                <label class="switch" aria-label="Download ZIP button">
+                    <input data-setting id="setting_show_zip_download_icon" type="checkbox"/>
+                    <span></span>
+                </label>
+            </div>
+        </section>
+
+        <section class="settings-section" id="profile-bulk">
+            <div class="section-heading">
+                <p class="section-kicker">Profile ZIP</p>
+                <h2>Bulk Profile Downloads</h2>
+            </div>
+
+            <div class="field-row">
+                <label for="setting_profile_bulk_media_filter">Default media type</label>
+                <select data-setting id="setting_profile_bulk_media_filter">
+                    <option value="both">Images and videos</option>
+                    <option value="images">Images only</option>
+                    <option value="videos">Videos only</option>
+                </select>
+                <p class="hint">You can still change this in the confirmation dialog before each profile download.</p>
+            </div>
+
+            <div class="setting-row">
+                <div>
+                    <label for="setting_profile_bulk_save_as_zip">Package profile downloads into one ZIP</label>
+                    <p>Create a single archive for the selected profile posts instead of triggering many browser downloads.</p>
+                </div>
+                <label class="switch" aria-label="Package profile downloads into one ZIP">
+                    <input data-setting id="setting_profile_bulk_save_as_zip" type="checkbox"/>
+                    <span></span>
+                </label>
+            </div>
+
+            <div class="setting-row" data-depends-on="setting_profile_bulk_save_as_zip">
+                <div>
+                    <label for="setting_profile_bulk_zip_post_folders">Create one folder per post inside the ZIP</label>
+                    <p>Group each post or reel into its own folder using the shortcode.</p>
+                </div>
+                <label class="switch" aria-label="Create one folder per post inside the ZIP">
+                    <input data-setting id="setting_profile_bulk_zip_post_folders" type="checkbox"/>
+                    <span></span>
+                </label>
+            </div>
+
+            <div class="setting-row">
+                <div>
+                    <label for="setting_profile_bulk_include_reels">Include reels</label>
+                    <p>Include reels from the profile grid and the profile's Reels tab. Tagged posts are not scanned.</p>
+                </div>
+                <label class="switch" aria-label="Include reels">
+                    <input data-setting id="setting_profile_bulk_include_reels" type="checkbox"/>
+                    <span></span>
+                </label>
+            </div>
+
+            <div class="field-row">
+                <label for="setting_profile_bulk_throttle_ms">Delay between media requests</label>
+                <input data-setting data-setting-type="number" id="setting_profile_bulk_throttle_ms" min="0" step="100" type="number"/>
+                <p class="hint">Measured in milliseconds. Higher values are gentler for large profiles.</p>
+            </div>
+        </section>
+
+        <section class="settings-section" id="filenames">
+            <div class="section-heading">
+                <p class="section-kicker">Filenames</p>
+                <h2>Download Naming</h2>
+            </div>
+
+            <div class="setting-row">
+                <div>
+                    <label for="setting_format_replace_jpeg_with_jpg">Replace .jpeg with .jpg</label>
+                    <p>Normalize JPEG extensions to the shorter .jpg form.</p>
+                </div>
+                <label class="switch" aria-label="Replace jpeg with jpg">
+                    <input data-setting id="setting_format_replace_jpeg_with_jpg" type="checkbox"/>
+                    <span></span>
+                </label>
+            </div>
+
+            <div class="setting-row">
+                <div>
+                    <label for="setting_format_use_indexing">Append carousel media index</label>
+                    <p>Add an index to filenames when downloading media from the same post.</p>
+                </div>
+                <label class="switch" aria-label="Append carousel media index">
+                    <input data-setting id="setting_format_use_indexing" type="checkbox"/>
+                    <span></span>
+                </label>
+            </div>
+
+            <div class="field-row">
+                <label for="setting_format_filename">Filename format</label>
+                <input data-setting id="setting_format_filename" type="text"/>
+                <p class="hint">Supported tags: {username}, {id}, {datetime}, {type}</p>
+            </div>
+
+            <div class="setting-row">
+                <div>
+                    <label for="setting_enable_datetime_format">Use custom datetime format</label>
+                    <p>When disabled, filenames use a Unix timestamp.</p>
+                </div>
+                <label class="switch" aria-label="Use custom datetime format">
+                    <input data-setting id="setting_enable_datetime_format" type="checkbox"/>
+                    <span></span>
+                </label>
+            </div>
+
+            <div class="field-row" data-depends-on="setting_enable_datetime_format">
+                <label for="setting_format_datetime">Datetime format</label>
+                <input data-setting id="setting_format_datetime" type="text"/>
+                <p class="hint">Example: YYYYMMDD_HHmmss</p>
+            </div>
+        </section>
+
+        <section class="settings-section" id="video">
+            <div class="section-heading">
+                <p class="section-kicker">Video</p>
+                <h2>Playback Behavior</h2>
+            </div>
+
+            <div class="setting-row">
+                <div>
+                    <label for="setting_enable_video_controls">Show browser video controls</label>
+                    <p>Use native controls on videos where the extension can safely add them.</p>
+                </div>
+                <label class="switch" aria-label="Show browser video controls">
+                    <input data-setting id="setting_enable_video_controls" type="checkbox"/>
+                    <span></span>
+                </label>
+            </div>
+
+            <div class="setting-row">
+                <div>
+                    <label for="setting_enable_explore_video_clickthrough">Open explore videos when clicked</label>
+                    <p>Let clicks on explore videos navigate to the source post.</p>
+                </div>
+                <label class="switch" aria-label="Open explore videos when clicked">
+                    <input data-setting id="setting_enable_explore_video_clickthrough" type="checkbox"/>
+                    <span></span>
+                </label>
+            </div>
+        </section>
+
+        <section class="settings-section" id="threads">
+            <div class="section-heading">
+                <p class="section-kicker">Threads</p>
+                <h2>Threads Downloads</h2>
+            </div>
+
+            <div class="setting-row">
+                <div>
+                    <label for="setting_enable_threads">Enable Threads download support</label>
+                    <p>Add download controls for supported media on Threads.</p>
+                </div>
+                <label class="switch" aria-label="Enable Threads download support">
+                    <input data-setting id="setting_enable_threads" type="checkbox"/>
+                    <span></span>
+                </label>
+            </div>
+        </section>
+    </div>
+</main>
+
+<div class="status" id="save-status" role="status" aria-live="polite">Saved</div>
+
 <script src="index.js" type="module"></script>
 </body>
 </html>

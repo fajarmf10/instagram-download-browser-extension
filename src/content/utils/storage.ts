@@ -11,6 +11,11 @@ export interface StorageSettings {
     setting_enable_datetime_format?: boolean;
     setting_format_filename?: string;
     setting_format_datetime?: string;
+    setting_profile_bulk_media_filter?: 'both' | 'images' | 'videos';
+    setting_profile_bulk_save_as_zip?: boolean;
+    setting_profile_bulk_zip_post_folders?: boolean;
+    setting_profile_bulk_include_reels?: boolean;
+    setting_profile_bulk_throttle_ms?: number;
 
     [key: string]: any;
 }

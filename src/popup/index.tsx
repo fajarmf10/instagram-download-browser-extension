@@ -1,151 +1,38 @@
-import React, { useEffect, useState } from 'react';
+import React from 'react';
 import { createRoot } from 'react-dom/client';
 import './index.scss';
 
-import { CONFIG_LIST, DEFAULT_DATETIME_FORMAT, DEFAULT_FILENAME_FORMAT } from '../constants';
-import SettingItem from './SettingItem';
+function openOptionsPage() {
+   if (chrome.runtime.openOptionsPage) {
+      chrome.runtime.openOptionsPage();
+      return;
+   }
+
+   chrome.tabs.create({ url: chrome.runtime.getURL('options/index.html') });
+}
 
 function App() {
-   const [newTab, setNewTab] = useState<boolean>(true);
-   const [threads, setThreads] = useState<boolean>(true);
-   const [enableVideoControl, setEnableVideoControl] = useState<boolean>(true);
-   const [enableExploreClickthrough, setEnableExploreClickthrough] = useState<boolean>(true);
-   const [replaceJpegWithJpg, setReplaceJpegWithJpg] = useState<boolean>(true);
-   const [useIndexing, setUseIndexing] = useState<boolean>(true);
-   const [enableDatetimeFormat, setEnableDatetimeFormat] = useState<boolean>(true);
-   const [enableZipDownload, setEnableZipDownload] = useState<boolean>(true);
-
-   const [fileNameFormat, setFileNameFormat] = useState<string>(DEFAULT_FILENAME_FORMAT);
-   const [dateTimeFormat, setDateTimeFormat] = useState<string>(DEFAULT_DATETIME_FORMAT);
-
-   const isMobile = navigator && navigator.userAgent && /Mobi|Android|iPhone/i.test(navigator.userAgent);
-
-   useEffect(() => {
-      chrome.storage.sync.get(CONFIG_LIST).then((res) => {
-         setNewTab(!!res.setting_show_open_in_new_tab_icon);
-         setThreads(!!res.setting_enable_threads);
-         setEnableVideoControl(!!res.setting_enable_video_controls);
-         setEnableExploreClickthrough(res.setting_enable_explore_video_clickthrough ?? true);
-         setReplaceJpegWithJpg(!!res.setting_format_replace_jpeg_with_jpg);
-         setUseIndexing(!!res.setting_format_use_indexing);
-         setEnableDatetimeFormat(!!res.setting_enable_datetime_format);
-         setEnableZipDownload(!!res.setting_show_zip_download_icon);
-
-         setFileNameFormat(res.setting_format_filename || DEFAULT_FILENAME_FORMAT);
-         setDateTimeFormat(res.setting_format_datetime || DEFAULT_DATETIME_FORMAT);
-      });
-   }, []);
-
-
    return (
-      <>
-         <main className={'container ' + (isMobile ? 'mobile' : '')}>
-            <a
-               className="github"
-               target="_black"
-               rel="noopener,noreferrer"
-               href="https://github.com/TheKonka/instagram-download-browser-extension"
-            >
-               <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 56 56">
-                  <g fillRule="evenodd" clipRule="evenodd">
-                     <circle fill="#fff" cx="28" cy="28" r="28"></circle>
-                     <path
-                        fill="#181616"
-                        d="M28 0C12.54 0 0 12.54 0 28c0 12.37 8.02 22.86 19.15 26.57 1.4.26 1.91-.61 1.91-1.35 0-.66-.02-2.43-.04-4.76-7.79 1.69-9.43-3.75-9.43-3.75-1.27-3.23-3.11-4.1-3.11-4.1-2.54-1.74.19-1.7.19-1.7 2.81.2 4.29 2.89 4.29 2.89 2.5 4.28 6.55 3.04 8.15 2.33.25-1.81.98-3.04 1.78-3.74-6.22-.71-12.75-3.11-12.75-13.84 0-3.06 1.09-5.56 2.88-7.51-.29-.71-1.25-3.56.27-7.41 0 0 2.35-.75 7.7 2.87 2.23-.62 4.63-.93 7.01-.94 2.38.01 4.77.32 7.01.94 5.35-3.62 7.69-2.87 7.69-2.87 1.53 3.85.57 6.7.28 7.41 1.79 1.96 2.88 4.46 2.88 7.51 0 10.76-6.55 13.12-12.78 13.82 1.01.86 1.9 2.57 1.9 5.19 0 3.74-.03 6.76-.03 7.68 0 .75.5 1.62 1.93 1.35C47.98 50.86 56 40.37 56 28 56 12.54 43.46 0 28 0z"
-                     ></path>
-                  </g>
-               </svg>
-            </a>
-            <div className="github-bg"></div>
+      <main className="popup">
+         <div>
+            <p className="eyebrow">Instagram Downloader</p>
+            <h1>Settings moved to a full page</h1>
+            <p className="lede">Use the wider configuration page for buttons, filenames, video controls, and Threads settings.</p>
+         </div>
 
-            <div className="settings">
-               <h2>Icon Settings</h2>
-               <SettingItem
-                  value={newTab}
-                  setValue={setNewTab}
-                  label="Show `open in new tab` Icon"
-                  id="setting_show_open_in_new_tab_icon"
-               />
-               <SettingItem
-                  value={enableZipDownload}
-                  setValue={setEnableZipDownload}
-                  label="Show `Download ZIP` Icon"
-                  id="setting_show_zip_download_icon"
-               />
+         <button className="primary" type="button" onClick={openOptionsPage}>
+            Open Settings
+         </button>
 
-               <h2>Download File Name Settings</h2>
-               <SettingItem
-                  value={replaceJpegWithJpg}
-                  setValue={setReplaceJpegWithJpg}
-                  label="Replace .jpeg With .jpg"
-                  id="setting_format_replace_jpeg_with_jpg"
-               />
-               <SettingItem
-                  value={useIndexing}
-                  setValue={setUseIndexing}
-                  label="Append the index to carousel media (e.g. 01, 02)"
-                  id="setting_format_use_indexing"
-               />
-
-               <div className="group">
-                  <input
-                     type="text"
-                     value={fileNameFormat}
-                     onChange={(e) => {
-                        const value = (e.target as HTMLInputElement).value;
-                        setFileNameFormat(value);
-                        chrome.storage.sync.set({ setting_format_filename: value || DEFAULT_FILENAME_FORMAT });
-                     }}
-                  />
-                  <span className="highlight"></span>
-                  <span className="bar"></span>
-                  <label>Filename Format</label>
-               </div>
-               <p className="hint">Supported Tags: {'{username}, {id}, {datetime}, {type}'}</p>
-
-               <SettingItem
-                  value={enableDatetimeFormat}
-                  setValue={setEnableDatetimeFormat}
-                  label="Enable Datetime Format (will use Unix format if not enabled)"
-                  id="setting_enable_datetime_format"
-               />
-
-               {enableDatetimeFormat && (
-                  <div className="group">
-                     <input
-                        type="text"
-                        value={dateTimeFormat}
-                        onChange={(e) => {
-                           const value = (e.target as HTMLInputElement).value;
-                           setDateTimeFormat(value);
-                           chrome.storage.sync.set({ setting_format_datetime: value || DEFAULT_DATETIME_FORMAT });
-                        }}
-                     />
-                     <span className="highlight"></span>
-                     <span className="bar"></span>
-                     <label>Datetime Format</label>
-                  </div>
-               )}
-
-               <h2>Video Settings</h2>
-               <SettingItem
-                  value={enableVideoControl}
-                  setValue={setEnableVideoControl}
-                  label="Show Controls Offered By Browser"
-                  id="setting_enable_video_controls"
-               />
-               <SettingItem
-                  value={enableExploreClickthrough}
-                  setValue={setEnableExploreClickthrough}
-                  label="Clicking explore videos opens the post"
-                  id="setting_enable_explore_video_clickthrough"
-               />
-
-               <h2>Threads Settings</h2>
-               <SettingItem value={threads} setValue={setThreads} label="Enable Threads Download" id="setting_enable_threads" />
-            </div>
-         </main>
-      </>
+         <a
+            className="source"
+            target="_blank"
+            rel="noopener noreferrer"
+            href="https://github.com/fajarmf10/instagram-download-browser-extension"
+         >
+            View Source
+         </a>
+      </main>
    );
 }
 
