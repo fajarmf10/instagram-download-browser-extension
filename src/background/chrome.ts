@@ -1,5 +1,5 @@
 import type { ReelsMedia } from '../types/global';
-import { findValueByKey, saveHighlights, saveProfileReel, saveReels, saveStories } from './fn';
+import { findValueByKey, saveHighlights, saveProfilePicture, saveProfileReel, saveReels, saveStories } from './fn';
 import {
     CONFIG_LIST,
     DEFAULT_DATETIME_FORMAT,
@@ -80,7 +80,9 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
     }
 
     (async () => {
-        if (type === 'stories') {
+        if (type === 'profile_pic') {
+            await saveProfilePicture(JSON.parse(data));
+        } else if (type === 'stories') {
             const {
                 stories_user_ids,
                 id_to_username_map

@@ -28,7 +28,7 @@ function App() {
             className="source"
             target="_blank"
             rel="noopener,noreferrer"
-            href="https://github.com/TheKonka/instagram-download-browser-extension"
+            href="https://github.com/fajarmf10/instagram-download-browser-extension"
          >
             View Source
          </a>

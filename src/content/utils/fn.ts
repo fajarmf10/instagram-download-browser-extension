@@ -30,7 +30,7 @@ async function forceDownload(blob: string, filename: string, extension: string) 
 const mediaInfoCache: Map<string, any> = new Map(); // key: media id, value: info json
 const mediaIdCache: Map<string, string> = new Map(); // key: post id, value: media id
 
-const findAppId = () => {
+export const findAppId = () => {
     const appIdPattern = /"X-IG-App-ID":"([\d]+)"/;
     const bodyScripts: NodeListOf<HTMLScriptElement> = document.querySelectorAll('body > script');
     for (let i = 0; i < bodyScripts.length; ++i) {
@@ -56,7 +56,7 @@ function findPostResource(articleNode: HTMLElement): { id: string; type: 'p' | '
     } else if (pathname.startsWith('/p/')) {
         return { id: pathname.split('/')[2], type: 'p' };
     }
-    const postIdPattern = /^\/(p|reel)\/([^/]+)\//;
+    const postIdPattern = /^\/(?:[^/]+\/)?(p|reel)\/([^/]+)\//;
     const aNodes = articleNode.querySelectorAll('a');
     for (let i = 0; i < aNodes.length; ++i) {
         const link = aNodes[i].getAttribute('href');
@@ -218,8 +218,15 @@ export async function downloadResource(params: DownloadParams) {
             }),
             mode: 'cors',
         });
+        if (!response.ok) {
+            throw new Error(`Download request failed with status ${response.status}`);
+        }
         const blob = await response.blob();
-        const extension = blob.type.split('/').pop();
+        if (blob.type.startsWith('text/') || blob.type === 'application/json') {
+            const message = (await blob.text()).slice(0, 160);
+            throw new Error(`Download returned text instead of media${message ? `: ${message}` : ''}`);
+        }
+        const extension = blob.type.split('/').pop()?.split(';')[0];
         const blobUrl = window.URL.createObjectURL(blob);
         forceDownload(blobUrl, filename, extension || 'jpg');
         return true;

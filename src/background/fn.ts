@@ -3,6 +3,84 @@ import type { Highlight } from '../types/highlights';
 import type { Reels } from '../types/reels';
 import type { ProfileReel } from '../types/profileReel';
 
+const PROFILE_AVATAR_CACHE_KEY = 'user_profile_pic_url';
+const PROFILE_AVATAR_HD_CACHE_KEY = 'user_profile_hd_pic_url_v2';
+
+function isLikelyLowResolutionAvatarUrl(url: string) {
+    const match = url.match(/(?:^|[/?&_=.-])s(\d{2,4})x(\d{2,4})(?:[_&/.-]|$)/);
+    if (!match) return false;
+    return Math.max(Number(match[1]), Number(match[2])) <= 150;
+}
+
+function getLargestAvatarVersionUrl(versions?: any[]) {
+    if (!Array.isArray(versions)) return undefined;
+    return [...versions]
+        .filter((version) => typeof version?.url === 'string')
+        .sort((a, b) => Number(b.width || 0) * Number(b.height || 0) - Number(a.width || 0) * Number(a.height || 0))[0]?.url;
+}
+
+function findProfilePictureUser(obj: any): any {
+    if (!obj || typeof obj !== 'object') return undefined;
+    if (
+        typeof obj.username === 'string' &&
+        (
+            typeof obj.profile_pic_url_hd === 'string' ||
+            typeof obj.hd_profile_pic_url_info?.url === 'string' ||
+            Array.isArray(obj.hd_profile_pic_versions) ||
+            typeof obj.profile_pic_url === 'string'
+        )
+    ) {
+        return obj;
+    }
+
+    for (const value of Object.values(obj)) {
+        const result = findProfilePictureUser(value);
+        if (result) return result;
+    }
+}
+
+export function getProfilePictureUrlFromApiData(jsonData: Record<string, any>) {
+    const user = findProfilePictureUser(jsonData);
+    if (!user?.username) return undefined;
+
+    const highResolutionUrl = [
+        user?.profile_pic_url_hd,
+        user?.hd_profile_pic_url_info?.url,
+        getLargestAvatarVersionUrl(user?.hd_profile_pic_versions),
+    ]
+        .filter((url): url is string => typeof url === 'string')
+        .find((url) => !isLikelyLowResolutionAvatarUrl(url));
+
+    if (highResolutionUrl) {
+        return { quality: 'high' as const, url: highResolutionUrl, username: user.username as string };
+    }
+
+    const fallbackUrl = user?.profile_pic_url;
+    if (typeof fallbackUrl === 'string') {
+        return { quality: 'fallback' as const, url: fallbackUrl, username: user.username as string };
+    }
+}
+
+export async function saveProfilePicture(jsonData: Record<string, any>) {
+    const result = getProfilePictureUrlFromApiData(jsonData);
+    if (!result) return;
+
+    const avatarStorage = await chrome.storage.local.get([
+        PROFILE_AVATAR_HD_CACHE_KEY,
+        PROFILE_AVATAR_CACHE_KEY,
+    ]);
+    const newMap = new Map(avatarStorage[PROFILE_AVATAR_CACHE_KEY] || []);
+    const hdMap = new Map(avatarStorage[PROFILE_AVATAR_HD_CACHE_KEY] || []);
+    newMap.set(result.username, result.url);
+    if (result.quality === 'high') {
+        hdMap.set(result.username, result.url);
+    }
+    await chrome.storage.local.set({
+        [PROFILE_AVATAR_CACHE_KEY]: [...newMap],
+        [PROFILE_AVATAR_HD_CACHE_KEY]: [...hdMap],
+    });
+}
+
 // save highlights data from json
 export async function saveHighlights(jsonData: Record<string, any>) {
     if (Array.isArray(jsonData.data?.xdt_api__v1__feed__reels_media__connection?.edges)) {

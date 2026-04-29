@@ -7,10 +7,6 @@ import {
 } from '../constants';
 import './index.scss';
 
-const PERMISSIONS = {
-   origins: ['https://www.instagram.com/*', 'https://www.threads.com/*'],
-};
-const PERMS_DECLINED_MESSAGE = 'Permission request was declined.\nPlease try again.';
 const DEFAULTS: Record<string, string | number | boolean> = {
    setting_format_filename: DEFAULT_FILENAME_FORMAT,
    setting_format_datetime: DEFAULT_DATETIME_FORMAT,
@@ -90,42 +86,5 @@ function setupSettingsForm() {
    });
 }
 
-async function permissionsRequest(event: Event) {
-   event.stopPropagation();
-
-   try {
-      const result = await chrome.permissions.request(PERMISSIONS);
-
-      if (result) {
-         document.body.classList.add('permissions-granted');
-      } else {
-         window.alert(PERMS_DECLINED_MESSAGE);
-      }
-   } catch {
-      window.alert(PERMS_DECLINED_MESSAGE);
-   }
-}
-
-async function setupPermissionsUI() {
-   const permissionRequestButtons = document.getElementsByClassName('permissions-request');
-
-   for (const elem of permissionRequestButtons) {
-      elem.addEventListener('click', permissionsRequest);
-   }
-
-   if (!navigator.userAgent.includes('Firefox') || !chrome.permissions?.contains) {
-      document.body.classList.add('permissions-granted');
-      return;
-   }
-
-   try {
-      const hasPermissions = await chrome.permissions.contains(PERMISSIONS);
-      document.body.classList.toggle('permissions-granted', hasPermissions);
-   } catch {
-      document.body.classList.add('permissions-granted');
-   }
-}
-
 setupSettingsForm();
 void loadSettings();
-void setupPermissionsUI();

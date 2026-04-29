@@ -6,6 +6,7 @@ import * as esbuild from 'esbuild';
 import { sassPlugin } from 'esbuild-sass-plugin';
 
 const platform = argv[2];
+const watch = argv.includes('--watch');
 
 try {
    await rm(`dist/${platform}`, { recursive: true });
@@ -20,7 +21,7 @@ if (platform === 'firefox') {
    entryPoints.push('src/background/firefox.ts');
 }
 
-const ctx = await esbuild.context({
+const buildOptions = {
    entryPoints,
    outdir: `dist/${platform}`,
    bundle: true,
@@ -49,6 +50,12 @@ const ctx = await esbuild.context({
          },
       },
    ],
-});
+};
 
-ctx.watch();
+if (watch) {
+   const ctx = await esbuild.context(buildOptions);
+   await ctx.watch();
+   console.log(`[${Date()}] watching ${platform} build`);
+} else {
+   await esbuild.build(buildOptions);
+}

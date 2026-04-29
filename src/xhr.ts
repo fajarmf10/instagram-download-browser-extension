@@ -4,6 +4,11 @@ const oldXHROpen = window.XMLHttpRequest.prototype.open;
 
 window.XMLHttpRequest.prototype.open = function (method, url) {
    if (method === 'GET' && typeof url === 'string') {
+      if (/\/api\/v1\/feed\/user\/[^/]+\/username\/?/.test(url)) {
+         this.addEventListener('load', function () {
+            chrome.runtime.sendMessage(EXTENSION_ID, { type: 'profile_pic', data: this.responseText });
+         });
+      }
       if (url.includes('/api/v1/feed/reels_media/?reel_ids=')) {
          this.addEventListener('load', function () {
             chrome.runtime.sendMessage(EXTENSION_ID, { data: this.responseText, api: '/api/v1/feed/reels_media/?reel_ids=' });

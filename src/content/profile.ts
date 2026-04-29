@@ -1,7 +1,7 @@
 import dayjs from 'dayjs';
 import { MediaType } from '../constants';
 import { getFilenameFromUrl, getMediaName } from './utils/filename';
-import { downloadResource, getAllMediaFromPostId, openInNewTab } from './utils/fn';
+import { downloadResource, findAppId, getAllMediaFromPostId, openInNewTab } from './utils/fn';
 import { storageCache } from './utils/storage';
 
 type ProfileTargetKind = 'p' | 'reel';
@@ -37,6 +37,11 @@ const PROFILE_BULK_DOWNLOAD_LABEL = 'Download All Posts';
 const PROFILE_SCROLL_SETTLE_MS = 900;
 const PROFILE_SCROLL_STABLE_ROUNDS = 3;
 const PROFILE_SCROLL_MAX_ROUNDS = 80;
+const PROFILE_AVATAR_CACHE_KEY = 'user_profile_pic_url';
+const PROFILE_AVATAR_HD_CACHE_KEY = 'user_profile_hd_pic_url_v2';
+const INSTAGRAM_BLUE = 'rgb(0, 149, 246)';
+const INSTAGRAM_BLUE_HOVER = 'rgb(24, 119, 242)';
+export const PROFILE_AVATAR_ACTION_ATTRIBUTE = 'data-profile-avatar-action';
 
 const sleep = (ms: number) => new Promise<void>((resolve) => {
     window.setTimeout(resolve, ms);
@@ -45,6 +50,189 @@ const sleep = (ms: number) => new Promise<void>((resolve) => {
 function getProfileUsername() {
     const arr = window.location.pathname.split('/').filter((e) => e);
     return arr[0] || document.querySelector('main header h2')?.textContent || undefined;
+}
+
+function getSrcsetLargestUrl(srcset: string) {
+    return srcset
+        .split(',')
+        .map((candidate) => candidate.trim().split(/\s+/)[0])
+        .filter(Boolean)
+        .pop();
+}
+
+function getProfileAvatarImage(root: ParentNode = document) {
+    const headerIntro = root.querySelector<HTMLElement>('main header > div') ?? root.querySelector<HTMLElement>('main header');
+    const images = [...(headerIntro ?? root).querySelectorAll<HTMLImageElement>('img')];
+
+    return images.find((img) => {
+        const alt = img.alt.toLowerCase();
+        return alt.includes('profile') || alt.includes('profil') || alt.includes(getProfileUsername()?.toLowerCase() || '');
+    }) ?? images[0] ?? null;
+}
+
+function getProfileAvatarUrl(root: ParentNode = document) {
+    const img = getProfileAvatarImage(root);
+    if (!img) return undefined;
+    return img.currentSrc || getSrcsetLargestUrl(img.srcset) || img.src || undefined;
+}
+
+function isLikelyLowResolutionAvatarUrl(url: string) {
+    const match = url.match(/(?:^|[/?&_=.-])s(\d{2,4})x(\d{2,4})(?:[_&/.-]|$)/);
+    if (!match) return false;
+    return Math.max(Number(match[1]), Number(match[2])) <= 150;
+}
+
+function findProfileAvatarUser(obj: any): any {
+    if (!obj || typeof obj !== 'object') return undefined;
+    if (
+        typeof obj.username === 'string' &&
+        (
+            typeof obj.profile_pic_url_hd === 'string' ||
+            typeof obj.hd_profile_pic_url_info?.url === 'string' ||
+            Array.isArray(obj.hd_profile_pic_versions) ||
+            typeof obj.profile_pic_url === 'string'
+        )
+    ) {
+        return obj;
+    }
+
+    for (const value of Object.values(obj)) {
+        const result = findProfileAvatarUser(value);
+        if (result) return result;
+    }
+}
+
+function getLargestAvatarVersionUrl(versions?: any[]) {
+    if (!Array.isArray(versions)) return undefined;
+    return [...versions]
+        .filter((version) => typeof version?.url === 'string')
+        .sort((a, b) => Number(b.width || 0) * Number(b.height || 0) - Number(a.width || 0) * Number(a.height || 0))[0]?.url;
+}
+
+function getProfileAvatarCandidatesFromApiData(data: Record<string, any>) {
+    const user = findProfileAvatarUser(data);
+    if (!user) return [];
+
+    return [
+        { quality: 'high', url: user.profile_pic_url_hd },
+        { quality: 'high', url: user.hd_profile_pic_url_info?.url },
+        { quality: 'high', url: getLargestAvatarVersionUrl(user.hd_profile_pic_versions) },
+        { quality: 'fallback', url: user.profile_pic_url },
+    ].filter((candidate): candidate is { quality: 'high' | 'fallback'; url: string } => typeof candidate.url === 'string');
+}
+
+function normalizeAvatarCandidateUrl(url: string) {
+    return url;
+}
+
+function getHighResolutionProfileAvatarUrlFromApiData(data: Record<string, any>) {
+    const candidates = getProfileAvatarCandidatesFromApiData(data)
+        .filter((candidate) => candidate.quality === 'high')
+        .map((candidate) => normalizeAvatarCandidateUrl(candidate.url));
+
+    return candidates.find((url) => !isLikelyLowResolutionAvatarUrl(url));
+}
+
+function getProfileAvatarUrlFromApiData(data: Record<string, any>) {
+    const highResolutionUrl = getHighResolutionProfileAvatarUrlFromApiData(data);
+    if (highResolutionUrl) return highResolutionUrl;
+
+    const fallback = getProfileAvatarCandidatesFromApiData(data)[0]?.url;
+    return fallback ? normalizeAvatarCandidateUrl(fallback) : undefined;
+}
+
+function getProfileUserIdFromApiData(data: Record<string, any>) {
+    const user = findProfileAvatarUser(data);
+    const id = user?.id || user?.pk;
+    return typeof id === 'string' || typeof id === 'number' ? String(id) : undefined;
+}
+
+async function cacheProfileAvatarUrl(username: string, url: string, quality: 'high' | 'fallback' = 'high') {
+    const avatarStorage = await chrome.storage.local.get([
+        PROFILE_AVATAR_HD_CACHE_KEY,
+        PROFILE_AVATAR_CACHE_KEY,
+    ]);
+    const data = new Map(avatarStorage[PROFILE_AVATAR_CACHE_KEY] || []);
+    const hdData = new Map(avatarStorage[PROFILE_AVATAR_HD_CACHE_KEY] || []);
+    data.set(username, url);
+    if (quality === 'high') {
+        hdData.set(username, url);
+    }
+    await chrome.storage.local.set({
+        [PROFILE_AVATAR_CACHE_KEY]: [...data],
+        [PROFILE_AVATAR_HD_CACHE_KEY]: [...hdData],
+    });
+}
+
+async function fetchProfileAvatarUrl(username: string) {
+    const appId = findAppId() || '936619743392459';
+    const endpoints = [
+        `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`,
+        `https://www.instagram.com/api/v1/feed/user/${encodeURIComponent(username)}/username/`,
+    ];
+    const seenEndpoints = new Set<string>();
+    let fallbackUrl: string | undefined;
+
+    for (let i = 0; i < endpoints.length; i++) {
+        const endpoint = endpoints[i];
+        if (seenEndpoints.has(endpoint)) continue;
+        seenEndpoints.add(endpoint);
+        try {
+            const response = await fetch(endpoint, {
+                credentials: 'include',
+                headers: {
+                    Accept: '*/*',
+                    'X-IG-App-ID': appId,
+                },
+                mode: 'cors',
+            });
+            if (!response.ok) continue;
+
+            const data = await response.json();
+            const highResolutionUrl = getHighResolutionProfileAvatarUrlFromApiData(data);
+            const fallbackCandidate = getProfileAvatarUrlFromApiData(data);
+            const userId = getProfileUserIdFromApiData(data);
+            if (userId) {
+                const userInfoEndpoint = `https://www.instagram.com/api/v1/users/${encodeURIComponent(userId)}/info/`;
+                if (!seenEndpoints.has(userInfoEndpoint) && !endpoints.includes(userInfoEndpoint)) {
+                    endpoints.splice(i + 1, 0, userInfoEndpoint);
+                }
+            }
+
+            if (highResolutionUrl) {
+                await cacheProfileAvatarUrl(username, highResolutionUrl);
+                return highResolutionUrl;
+            }
+
+            if (fallbackCandidate) {
+                fallbackUrl = fallbackUrl || fallbackCandidate;
+            }
+        } catch (error) {
+            console.log(`Failed to fetch profile avatar from ${endpoint}: ${error}`);
+        }
+    }
+
+    if (fallbackUrl) {
+        await cacheProfileAvatarUrl(username, fallbackUrl, 'fallback');
+    }
+    return fallbackUrl;
+}
+
+async function resolveProfileAvatarUrl(username?: string | null) {
+    const avatarStorage = await chrome.storage.local.get([
+        PROFILE_AVATAR_HD_CACHE_KEY,
+        PROFILE_AVATAR_CACHE_KEY,
+    ]);
+    const cachedHdUrl = username ? new Map(avatarStorage[PROFILE_AVATAR_HD_CACHE_KEY] || []).get(username) : undefined;
+    const cachedUrl = username ? new Map(avatarStorage[PROFILE_AVATAR_CACHE_KEY] || []).get(username) : undefined;
+    if (typeof cachedHdUrl === 'string' && !isLikelyLowResolutionAvatarUrl(cachedHdUrl)) {
+        return cachedHdUrl;
+    }
+
+    const apiUrl = username ? await fetchProfileAvatarUrl(username) : undefined;
+    return apiUrl
+        || (typeof cachedUrl === 'string' ? cachedUrl : undefined)
+        || getProfileAvatarUrl();
 }
 
 function getProfileBulkSettings(): ProfileBulkSettings {
@@ -71,8 +259,8 @@ function getProfileBulkSettings(): ProfileBulkSettings {
 
 function getProfilePostTargets(includeReels: boolean) {
     const targets = new Map<string, ProfilePostTarget>();
-    document.querySelectorAll<HTMLAnchorElement>('main a[href^="/p/"], main a[href^="/reel/"]').forEach((anchor) => {
-        const match = anchor.pathname.match(/^\/(p|reel)\/([^/]+)/);
+    document.querySelectorAll<HTMLAnchorElement>('main a[href]').forEach((anchor) => {
+        const match = anchor.pathname.match(/^\/(?:[^/]+\/)?(p|reel)\/([^/]+)/);
         if (!match) return;
 
         const kind = match[1] as ProfileTargetKind;
@@ -101,14 +289,71 @@ function setBulkButtonState(button: HTMLButtonElement, label: string, busy: bool
     button.style.cursor = busy ? 'progress' : 'pointer';
 }
 
+function isVisibleElement(node: HTMLElement) {
+    const rect = node.getBoundingClientRect();
+    return rect.width > 0 && rect.height > 0;
+}
+
+function isWideProfileAction(node: HTMLElement) {
+    const rect = node.getBoundingClientRect();
+    return rect.width >= 80 && rect.height >= 28;
+}
+
+function getNormalizedText(node: HTMLElement) {
+    return (node.textContent || '').replace(/\s+/g, ' ').trim();
+}
+
+function isLikelyProfileActionControl(node: HTMLElement) {
+    if (node.closest(`.${PROFILE_BULK_DOWNLOAD_WRAPPER_CLASS}`)) return false;
+    if (node.querySelector('img, canvas')) return false;
+
+    const text = getNormalizedText(node);
+    if (node.tagName === 'BUTTON') return text.length > 0 && text.length <= 60;
+    return text.length > 0 && text.length <= 40;
+}
+
 function findProfileActionRow(profileHeader: HTMLElement) {
-    return [...profileHeader.querySelectorAll<HTMLElement>('div')]
-        .reverse()
-        .find((node) => {
-            if (!node.offsetParent) return false;
-            const actions = node.querySelectorAll('button, a[role="link"], div[role="button"]');
-            return actions.length >= 2;
-        }) ?? null;
+    const actionSelector = 'button, div[role="button"]';
+    const visibleActions = [...profileHeader.querySelectorAll<HTMLElement>(actionSelector)]
+        .filter(isLikelyProfileActionControl)
+        .filter(isVisibleElement);
+    const wideActions = visibleActions.filter(isWideProfileAction);
+
+    const candidates = new Set<HTMLElement>();
+    wideActions.forEach((action) => {
+        let node: HTMLElement | null = action.parentElement;
+        for (let depth = 0; node && depth < 6 && profileHeader.contains(node); depth++) {
+            candidates.add(node);
+            node = node.parentElement;
+        }
+    });
+
+    return [...candidates]
+        .filter((node) => node !== profileHeader && isVisibleElement(node))
+        .filter((node) => !['BODY', 'HEADER', 'MAIN'].includes(node.tagName))
+        .filter((node) => {
+            const actions = [...node.querySelectorAll<HTMLElement>(actionSelector)]
+                .filter((action) => visibleActions.includes(action));
+            const wideActionCount = actions.filter(isWideProfileAction).length;
+            return actions.length >= 2 && actions.length <= 5 && wideActionCount >= 2;
+        })
+        .sort((a, b) => {
+            const aRect = a.getBoundingClientRect();
+            const bRect = b.getBoundingClientRect();
+            return aRect.height - bRect.height || aRect.width - bRect.width;
+        })[0] ?? null;
+}
+
+function findProfileActionInsertionTarget(actionRow: HTMLElement, profileHeader: HTMLElement) {
+    const actionSection = actionRow.closest<HTMLElement>('section');
+    if (actionSection && actionSection !== profileHeader && profileHeader.contains(actionSection)) {
+        return actionSection;
+    }
+    return actionRow;
+}
+
+function setImportantStyle(node: HTMLElement, property: string, value: string) {
+    node.style.setProperty(property, value, 'important');
 }
 
 function normalizePath(pathname: string) {
@@ -665,72 +910,113 @@ async function handleProfilePostsDownload(button: HTMLButtonElement) {
 }
 
 export function ensureProfileBulkDownloadButton(profileHeader: HTMLElement) {
-    if (profileHeader.querySelector(`.${PROFILE_BULK_DOWNLOAD_BUTTON_CLASS}`)) return;
+    let wrapper = profileHeader.querySelector<HTMLDivElement>(`.${PROFILE_BULK_DOWNLOAD_WRAPPER_CLASS}`);
+    let button = wrapper?.querySelector<HTMLButtonElement>(`.${PROFILE_BULK_DOWNLOAD_BUTTON_CLASS}`);
 
-    const wrapper = document.createElement('div');
-    wrapper.className = PROFILE_BULK_DOWNLOAD_WRAPPER_CLASS;
-    wrapper.setAttribute('style', 'display:flex;width:100%;margin-top:12px;');
+    if (!wrapper) {
+        wrapper = document.createElement('div');
+        wrapper.className = PROFILE_BULK_DOWNLOAD_WRAPPER_CLASS;
+    }
 
-    const button = document.createElement('button');
-    button.type = 'button';
-    button.className = PROFILE_BULK_DOWNLOAD_BUTTON_CLASS;
+    setImportantStyle(wrapper, 'display', 'flex');
+    setImportantStyle(wrapper, 'width', '100%');
+    setImportantStyle(wrapper, 'margin', '8px 0 0');
+    setImportantStyle(wrapper, 'box-sizing', 'border-box');
+
+    if (!button) {
+        const createdButton = document.createElement('button');
+        createdButton.type = 'button';
+        createdButton.className = PROFILE_BULK_DOWNLOAD_BUTTON_CLASS;
+        createdButton.onclick = (event) => {
+            event.preventDefault();
+            event.stopPropagation();
+            void handleProfilePostsDownload(createdButton);
+        };
+        wrapper.appendChild(createdButton);
+        button = createdButton;
+    }
+
     button.dataset.label = PROFILE_BULK_DOWNLOAD_LABEL;
-    button.textContent = PROFILE_BULK_DOWNLOAD_LABEL;
-    button.setAttribute(
-        'style',
-        [
-            'appearance:none',
-            'border:0',
-            'border-radius:8px',
-            'background:var(--ig-secondary-button-background, rgb(239, 239, 239))',
-            'color:var(--ig-primary-text, rgb(0, 0, 0))',
-            'cursor:pointer',
-            'font:inherit',
-            'font-size:14px',
-            'font-weight:600',
-            'line-height:18px',
-            'min-height:36px',
-            'padding:7px 16px',
-            'text-align:center',
-            'width:100%',
-        ].join(';')
-    );
+    button.textContent ||= PROFILE_BULK_DOWNLOAD_LABEL;
+    setImportantStyle(button, 'appearance', 'none');
+    setImportantStyle(button, 'border', '0');
+    setImportantStyle(button, 'border-radius', '8px');
+    setImportantStyle(button, 'background', INSTAGRAM_BLUE);
+    setImportantStyle(button, 'background-color', INSTAGRAM_BLUE);
+    setImportantStyle(button, 'color', 'rgb(255, 255, 255)');
+    setImportantStyle(button, 'cursor', 'pointer');
+    setImportantStyle(button, 'font', 'inherit');
+    setImportantStyle(button, 'font-size', '14px');
+    setImportantStyle(button, 'font-weight', '600');
+    setImportantStyle(button, 'line-height', '18px');
+    setImportantStyle(button, 'min-height', '36px');
+    setImportantStyle(button, 'padding', '7px 16px');
+    setImportantStyle(button, 'text-align', 'center');
+    setImportantStyle(button, 'width', '100%');
     button.onmouseenter = () => {
-        button.style.setProperty('filter', 'brightness(0.96)');
+        button.style.setProperty('background-color', INSTAGRAM_BLUE_HOVER, 'important');
     };
     button.onmouseleave = () => {
-        button.style.removeProperty('filter');
+        button.style.setProperty('background-color', INSTAGRAM_BLUE, 'important');
     };
-    button.onclick = (event) => {
-        event.preventDefault();
-        event.stopPropagation();
-        void handleProfilePostsDownload(button);
-    };
-
-    wrapper.appendChild(button);
 
     const actionRow = findProfileActionRow(profileHeader);
     if (actionRow) {
-        actionRow.insertAdjacentElement('afterend', wrapper);
-    } else {
+        const insertionTarget = findProfileActionInsertionTarget(actionRow, profileHeader);
+        if (insertionTarget.nextElementSibling !== wrapper) {
+            insertionTarget.insertAdjacentElement('afterend', wrapper);
+        }
+    } else if (!wrapper.isConnected) {
         profileHeader.appendChild(wrapper);
     }
 }
 
 export async function profileOnClicked(target: HTMLAnchorElement) {
-    const { user_profile_pic_url } = await chrome.storage.local.get(['user_profile_pic_url']);
-    const data = new Map(user_profile_pic_url || []);
     const arr = window.location.pathname.split('/').filter((e) => e);
     const username = arr.length === 1 ? arr[0] : document.querySelector('main header h2')?.textContent;
-    const url = data.get(username) || document.querySelector('header img')?.getAttribute('src');
+    const url = await resolveProfileAvatarUrl(username);
     if (typeof url === 'string') {
         if (target.className.includes('download-btn')) {
-            downloadResource({
+            const success = await downloadResource({
                 url: url,
                 id: username!,
             });
+            if (!success) {
+                alert('Avatar download failed. Refresh the profile page and try again.');
+            }
         } else {
             openInNewTab(url);
         }
     }
 }
+
+export const __profileBulkTestApi = {
+    createMediaFilename,
+    createProfileBulkProgressDialog,
+    downloadBlob,
+    getBlobExtension,
+    findProfileActionRow,
+    findProfileActionInsertionTarget,
+    getProfileAvatarImage,
+    getProfileAvatarUrl,
+    getHighResolutionProfileAvatarUrlFromApiData,
+    getProfileAvatarUrlFromApiData,
+    getProfileUserIdFromApiData,
+    getProfileBulkSettings,
+    getProfilePostTargets,
+    getNormalizedText,
+    isLikelyProfileActionControl,
+    isLikelyLowResolutionAvatarUrl,
+    isVisibleElement,
+    isWideProfileAction,
+    isVideoMedia,
+    makeDialogButton,
+    mergeTargets,
+    normalizePath,
+    sanitizeZipSegment,
+    setBulkButtonState,
+    shouldIncludeMedia,
+    showProfileBulkConfirmDialog,
+    resolveProfileAvatarUrl,
+    waitForThrottle,
+};

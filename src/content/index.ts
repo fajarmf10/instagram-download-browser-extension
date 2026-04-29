@@ -1,6 +1,7 @@
 import { CLASS_CUSTOM_BUTTON } from '../constants';
 import { addCustomBtn, addVideoDownloadCoverBtn, handleVideoCoverDownloadBtn, onClickHandler } from './button';
-import { ensureProfileBulkDownloadButton } from './profile';
+import { ensureHighlightsBatchDownloadButton } from './highlights';
+import { ensureProfileBulkDownloadButton, PROFILE_AVATAR_ACTION_ATTRIBUTE } from './profile';
 import { handleThreads } from './threads';
 import { checkType } from './utils/fn';
 import { handleReelsVideoVolumeChange, handleStoriesVideoVolumeChange, handleVideo } from "./utils/video";
@@ -10,6 +11,21 @@ const VIDEO_SVG_PATH = "M22.942 7.464c-.062-1.36-.306-2.143-.511-2.671a5.366 5.3
 const tagIconSelector = `path[d="M12 12c3.032 0 5.5-2.468 5.5-5.5S15.032 1 12 1a5.507 5.507 0 0 0-5.5 5.5C6.5 9.532 8.968 12 12 12Zm9.553 6.27C19.396 15.283 15.825 13.5 12 13.5c-3.824 0-7.396 1.782-9.552 4.768a2.317 2.317 0 0 0-.315 2.149 2.45 2.45 0 0 0 1.665 1.537C5.517 22.431 8.335 23 12 23c3.668 0 6.479-.565 8.19-1.04a2.464 2.464 0 0 0 1.678-1.544 2.312 2.312 0 0 0-.315-2.146Z"]`;
 const likeIconSelector = `path[d="M16.792 3.904A4.989 4.989 0 0 1 21.5 9.122c0 3.072-2.652 4.959-5.197 7.222-2.512 2.243-3.865 3.469-4.303 3.752-.477-.309-2.143-1.823-4.303-3.752C5.141 14.072 2.5 12.167 2.5 9.122a4.989 4.989 0 0 1 4.708-5.218 4.21 4.21 0 0 1 3.675 1.941c.84 1.175.98 1.763 1.12 1.763s.278-.588 1.11-1.766a4.17 4.17 0 0 1 3.679-1.938m0-2a6.04 6.04 0 0 0-4.797 2.127 6.052 6.052 0 0 0-4.787-2.127A6.985 6.985 0 0 0 .5 9.122c0 3.61 2.55 5.827 5.015 7.97.283.246.569.494.853.747l1.027.918a44.998 44.998 0 0 0 3.518 3.018 2 2 0 0 0 2.174 0 45.263 45.263 0 0 0 3.626-3.115l.922-.824c.293-.26.59-.519.885-.774 2.334-2.025 4.98-4.32 4.98-7.94a6.985 6.985 0 0 0-6.708-7.218Z"]`
 const shareIconSelector = `path[d="M13.973 20.046 21.77 6.928C22.8 5.195 21.55 3 19.535 3H4.466C2.138 3 .984 5.825 2.646 7.456l4.842 4.752 1.723 7.121c.548 2.266 3.571 2.721 4.762.717Z"]`
+
+function findProfileAvatarButtonContainer() {
+    const header = document.querySelector<HTMLElement>('main header');
+    if (!header) return null;
+
+    const headerIntro = header.querySelector<HTMLElement>(':scope > div') ?? header;
+    const username = window.location.pathname.split('/').filter((e) => e)[0]?.toLowerCase();
+    const avatarImage = [...headerIntro.querySelectorAll<HTMLImageElement>('img')].find((img) => {
+        const alt = img.alt.toLowerCase();
+        return alt.includes('profile') || alt.includes('profil') || (username ? alt.includes(username) : false);
+    }) ?? headerIntro.querySelector<HTMLImageElement>('img');
+
+    const avatarControl = avatarImage?.closest<HTMLElement>('div[role="button"], span[role="link"], a[role="link"]');
+    return avatarControl?.parentElement ?? avatarControl ?? null;
+}
 
 async function init() {
     await initStorageCache();
@@ -191,15 +207,17 @@ function processPage() {
     }
 
     // user Avatar
-    const profileHeader = document.querySelector<HTMLElement>('section>main>div>header>section:nth-child(2)');
-    if (profileHeader && profileHeader.getElementsByClassName(CLASS_CUSTOM_BUTTON).length === 0) {
-        const profileBtn = profileHeader.querySelector('svg circle');
-        if (profileBtn) {
-            addCustomBtn(profileBtn.parentNode?.parentNode?.parentNode, iconColor);
-        }
+    const profileAvatarContainer = pathnameList.length === 1 ? findProfileAvatarButtonContainer() : null;
+    if (profileAvatarContainer && profileAvatarContainer.getElementsByClassName(CLASS_CUSTOM_BUTTON).length === 0) {
+        addCustomBtn(profileAvatarContainer, iconColor, 'after', {
+            attributes: { [PROFILE_AVATAR_ACTION_ATTRIBUTE]: 'true' },
+            includeZip: false,
+        });
     }
-    if (profileHeader && pathnameList.length === 1) {
-        ensureProfileBulkDownloadButton(profileHeader);
+    const profilePageRoot = document.querySelector<HTMLElement>('main');
+    if (profilePageRoot && pathnameList.length === 1) {
+        ensureProfileBulkDownloadButton(profilePageRoot);
+        ensureHighlightsBatchDownloadButton(profilePageRoot);
     }
 
     // user's profile page video cover

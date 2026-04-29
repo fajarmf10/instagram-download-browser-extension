@@ -142,8 +142,7 @@ a {
    gap: 18px;
 }
 
-.settings-section,
-.permission-panel {
+.settings-section {
    border: 1px solid var(--line);
    border-radius: 8px;
    background: rgba(255, 253, 250, 0.92);
@@ -270,31 +269,6 @@ a {
    }
 }
 
-.permission-panel {
-   display: flex;
-   align-items: center;
-   justify-content: space-between;
-   gap: 24px;
-   border-color: var(--warning-line);
-   background: var(--warning);
-   padding: 24px 30px;
-
-   h2 {
-      margin: 0;
-      font-size: 1.25rem;
-   }
-
-   p:not(.section-kicker) {
-      margin: 8px 0 0;
-      color: #6f5420;
-      line-height: 1.5;
-   }
-}
-
-body.permissions-granted .permission-panel {
-   display: none;
-}
-
 .primary {
    min-height: 42px;
    border-radius: 7px;
@@ -347,7 +321,7 @@ body.permissions-granted .permission-panel {
 
    .sidebar {
       position: static;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      grid-template-columns: repeat(5, minmax(0, 1fr));
       margin-bottom: 18px;
       overflow-x: auto;
 
@@ -357,8 +331,7 @@ body.permissions-granted .permission-panel {
       }
    }
 
-   .setting-row,
-   .permission-panel {
+   .setting-row {
       grid-template-columns: 1fr;
       align-items: start;
    }
@@ -376,8 +349,4 @@ body.permissions-granted .permission-panel {
       padding-right: 20px;
    }
 
-   .permission-panel {
-      display: grid;
-      padding: 20px;
-   }
 }

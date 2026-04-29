@@ -3,7 +3,7 @@ import type { IconClassName, IconColor } from '../types/global';
 import { highlightsOnClicked } from './highlights';
 import { postOnClicked } from './post';
 import { postDetailOnClicked } from './post-detail';
-import { profileOnClicked } from './profile';
+import { profileOnClicked, PROFILE_AVATAR_ACTION_ATTRIBUTE } from './profile';
 import { handleProfileReel } from './profile-reel';
 import { reelsOnClicked } from './reels';
 import { storyOnClicked } from './stories';
@@ -50,7 +50,7 @@ export function onClickHandler(currentTarget: Element) {
         const isReelDetailWithNameInUrl = pathnameList.length === 3 && pathnameList[1] === 'reel';
 
         let fn: (target: HTMLAnchorElement) => Promise<any> = postOnClicked;
-        if (document.querySelector('section>main>div>header>section:nth-child(2)')?.contains(currentTarget)) {
+        if (currentTarget.getAttribute(PROFILE_AVATAR_ACTION_ATTRIBUTE) === 'true') {
             fn = profileOnClicked;
         } else if (pathPrefix.startsWith('/reels/')) {
             fn = reelsOnClicked;
@@ -101,16 +101,32 @@ function createCustomBtn(svg: string, iconColor: IconColor, className: IconClass
     return newBtn;
 }
 
-export function addCustomBtn(node: any, iconColor: IconColor, position: 'before' | 'after' = 'after') {
+interface AddCustomBtnOptions {
+    attributes?: Record<string, string>;
+    includeZip?: boolean;
+}
+
+export function addCustomBtn(node: any, iconColor: IconColor, position: 'before' | 'after' = 'after', options: AddCustomBtnOptions = {}) {
     const { setting_show_open_in_new_tab_icon, setting_show_zip_download_icon } = storageCache.settings;
     const downloadBtn = createCustomBtn(svgDownloadBtn, iconColor, 'download-btn');
     let newtabBtn, zipBtn;
+    const applyOptions = (button?: HTMLAnchorElement) => {
+        if (!button || !options.attributes) return;
+        Object.entries(options.attributes).forEach(([name, value]) => {
+            button.setAttribute(name, value);
+        });
+    };
+
+    applyOptions(downloadBtn);
+
     if (!(checkType() !== 'pc' && window.location.pathname.startsWith('/stories/'))) {
         if (setting_show_open_in_new_tab_icon) {
             newtabBtn = createCustomBtn(svgNewtabBtn, iconColor, 'newtab-btn');
+            applyOptions(newtabBtn);
         }
     }
     if (
+        options.includeZip !== false &&
         checkType() === 'pc' &&
         setting_show_zip_download_icon &&
         window.location.host === 'www.instagram.com' &&
@@ -118,6 +134,7 @@ export function addCustomBtn(node: any, iconColor: IconColor, position: 'before'
         !window.location.pathname.startsWith('/stories/')
     ) {
         zipBtn = createCustomBtn(svgZipBtn, iconColor, 'zip-btn');
+        applyOptions(zipBtn);
     }
     if (position === 'before') {
         if (newtabBtn) {

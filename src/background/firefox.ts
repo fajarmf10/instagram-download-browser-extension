@@ -8,7 +8,7 @@ import {
     MESSAGE_ZIP_DOWNLOAD
 } from '../constants';
 import type { ReelsMedia } from '../types/global';
-import { findValueByKey, saveHighlights, saveProfileReel, saveReels, saveStories } from './fn';
+import { findValueByKey, saveHighlights, saveProfilePicture, saveProfileReel, saveReels, saveStories } from './fn';
 
 browser.runtime.onInstalled.addListener(async () => {
     // 1. Initialize default settings
@@ -46,6 +46,13 @@ browser.runtime.onStartup.addListener(() => {
 });
 
 async function listenInstagram(details: browser.webRequest._OnBeforeRequestDetails, jsonData: Record<string, any>) {
+    const { method } = details;
+    const { pathname } = new URL(details.url);
+    if (method === 'GET' && pathname.startsWith('/api/v1/feed/user/') && pathname.endsWith('/username/')) {
+        await saveProfilePicture(jsonData);
+        return;
+    }
+
     switch (details.url) {
         case 'https://www.instagram.com/api/graphql':
             saveStories(jsonData);
