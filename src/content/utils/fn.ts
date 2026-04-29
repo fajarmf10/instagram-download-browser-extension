@@ -202,7 +202,33 @@ export const getUrlFromInfoApi = async (articleNode: HTMLElement, mediaIdx = 0):
     }
 };
 
-export async function downloadResource(params: DownloadParams) {
+export function normalizeContentType(contentType?: string | null) {
+    return (contentType || '').split(';')[0].trim().toLowerCase();
+}
+
+export function isAllowedMediaContentType(contentType?: string | null) {
+    const normalizedType = normalizeContentType(contentType);
+    return !normalizedType
+        || normalizedType.startsWith('image/')
+        || normalizedType.startsWith('video/')
+        || normalizedType === 'application/octet-stream';
+}
+
+export function assertAllowedMediaContentType(contentType?: string | null, context = 'Media') {
+    if (!isAllowedMediaContentType(contentType)) {
+        throw new Error(`${context} response was not media (${normalizeContentType(contentType)}).`);
+    }
+}
+
+export function assertValidMediaBlob(blob: Blob, contentType?: string | null, context = 'Media') {
+    if (blob.size === 0) {
+        throw new Error(`${context} response was empty.`);
+    }
+    assertAllowedMediaContentType(contentType, context);
+    assertAllowedMediaContentType(blob.type, context);
+}
+
+export async function downloadResource(params: DownloadParams & { signal?: AbortSignal }) {
     const { url } = params
     console.log(`Downloading ${url}`);
     const filename = await getFilenameFromUrl(params);
@@ -217,20 +243,26 @@ export async function downloadResource(params: DownloadParams) {
                 Origin: location.origin,
             }),
             mode: 'cors',
+            signal: params.signal,
         });
         if (!response.ok) {
             throw new Error(`Download request failed with status ${response.status}`);
         }
+        assertAllowedMediaContentType(response.headers.get('content-type'), 'Download');
         const blob = await response.blob();
-        if (blob.type.startsWith('text/') || blob.type === 'application/json') {
+        if (!isAllowedMediaContentType(blob.type)) {
             const message = (await blob.text()).slice(0, 160);
             throw new Error(`Download returned text instead of media${message ? `: ${message}` : ''}`);
         }
+        assertValidMediaBlob(blob, response.headers.get('content-type'), 'Download');
         const extension = blob.type.split('/').pop()?.split(';')[0];
         const blobUrl = window.URL.createObjectURL(blob);
         forceDownload(blobUrl, filename, extension || 'jpg');
         return true;
-    } catch (e) {
+    } catch (e: any) {
+        if (e?.name === 'AbortError') {
+            throw e;
+        }
         console.error(e);
         return false;
     }

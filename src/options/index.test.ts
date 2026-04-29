@@ -99,6 +99,23 @@ describe('options page settings', () => {
       expect(set).toHaveBeenCalledWith({ setting_format_filename: DEFAULT_FILENAME_FORMAT });
    });
 
+   it('falls back when number settings are negative or not finite', async () => {
+      const { set } = await importOptionsModule();
+      const throttle = document.querySelector<HTMLInputElement>('#setting_profile_bulk_throttle_ms')!;
+
+      throttle.value = '-1';
+      throttle.dispatchEvent(new Event('input'));
+      throttle.value = 'Infinity';
+      throttle.dispatchEvent(new Event('input'));
+      throttle.value = 'abc';
+      throttle.dispatchEvent(new Event('input'));
+
+      await Promise.resolve();
+
+      expect(set).toHaveBeenCalledWith({ setting_profile_bulk_throttle_ms: DEFAULT_PROFILE_BULK_THROTTLE_MS });
+      expect(set).toHaveBeenCalledTimes(3);
+   });
+
    it('disables dependent fields when their controlling setting is off', async () => {
       await importOptionsModule({
          setting_profile_bulk_save_as_zip: false,

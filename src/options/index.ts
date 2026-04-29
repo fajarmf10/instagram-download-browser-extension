@@ -69,7 +69,16 @@ async function saveSetting(input: HTMLInputElement | HTMLSelectElement) {
       : input.value || getDefaultValue(input);
 
    if (input.dataset.settingType === 'number') {
-      value = Number(value);
+      const parsedValue = Number(value);
+      if (Number.isFinite(parsedValue) && parsedValue >= 0) {
+         value = parsedValue;
+      } else {
+         const fallbackValue = getDefaultValue(input);
+         const parsedFallbackValue = Number(fallbackValue);
+         value = Number.isFinite(parsedFallbackValue) && parsedFallbackValue >= 0
+            ? parsedFallbackValue
+            : 0;
+      }
    }
 
    await chrome.storage.sync.set({ [input.id]: value });

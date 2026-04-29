@@ -121,6 +121,23 @@ describe('media info helpers', () => {
 
         expect(document.querySelector('a')).toBeNull();
         expect(errorSpy).toHaveBeenCalled();
-        expect((errorSpy.mock.calls[0][0] as Error).message).toBe('Download returned text instead of media: URL signature mismatch');
+        expect((errorSpy.mock.calls[0][0] as Error).message).toBe('Download response was not media (text/plain).');
+    });
+
+    it('passes optional abort signals to download fetches', async () => {
+        const controller = new AbortController();
+        const abortError = new DOMException('Aborted', 'AbortError');
+        const fetchMock = vi.fn(async (_url: string, init?: RequestInit) => {
+            expect(init?.signal).toBe(controller.signal);
+            throw abortError;
+        });
+        vi.stubGlobal('fetch', fetchMock);
+        vi.spyOn(console, 'error').mockImplementation(() => {});
+
+        await expect(downloadResource({
+            id: 'avatar',
+            signal: controller.signal,
+            url: 'https://cdn.example/avatar.jpg',
+        })).rejects.toThrow(abortError);
     });
 });

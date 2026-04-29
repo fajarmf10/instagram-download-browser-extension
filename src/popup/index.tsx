@@ -27,7 +27,7 @@ function App() {
          <a
             className="source"
             target="_blank"
-            rel="noopener,noreferrer"
+            rel="noopener noreferrer"
             href="https://github.com/fajarmf10/instagram-download-browser-extension"
          >
             View Source

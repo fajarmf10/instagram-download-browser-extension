@@ -1,5 +1,11 @@
 import dayjs from 'dayjs';
-import { checkType, downloadResource, openInNewTab } from './utils/fn';
+import {
+    assertAllowedMediaContentType,
+    assertValidMediaBlob,
+    checkType,
+    downloadResource,
+    openInNewTab,
+} from './utils/fn';
 import { DownloadParams, getFilenameFromUrl, getMediaName } from './utils/filename';
 import type { Highlight } from '../types/highlights';
 import type { ReelsMedia } from '../types/global';
@@ -10,6 +16,7 @@ const HIGHLIGHTS_BATCH_BUTTON_CLASS = 'highlights-bulk-download-btn';
 const HIGHLIGHTS_BATCH_WRAPPER_CLASS = 'highlights-bulk-download-wrap';
 const INSTAGRAM_BLUE = 'rgb(0, 149, 246)';
 const INSTAGRAM_BLUE_HOVER = 'rgb(24, 119, 242)';
+const INVALID_ZIP_SEGMENT_CHARS_RE = new RegExp(String.raw`[<>:"/\\|?*\x00-\x1F]`, 'g');
 
 interface HighlightTarget {
     id: string;
@@ -39,7 +46,7 @@ function findHighlight(obj: Record<string, any>): Highlight.XdtApiV1FeedReelsMed
 }
 
 function sanitizeZipSegment(value: string) {
-    return value.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').replace(/\s+/g, ' ').trim() || 'highlight';
+    return value.replace(INVALID_ZIP_SEGMENT_CHARS_RE, '_').replace(/\s+/g, ' ').trim() || 'highlight';
 }
 
 function getHighlightTargets(root: ParentNode = document) {
@@ -122,8 +129,11 @@ async function downloadHighlightsAsZip(items: { target: HighlightTarget; node: H
             if (!response.ok) {
                 throw new Error(`Failed to fetch highlight media (${response.status}).`);
             }
+            const contentType = response.headers.get('content-type');
+            assertAllowedMediaContentType(contentType, `Highlight ${target.title}`);
 
             const blob = await response.blob();
+            assertValidMediaBlob(blob, contentType, `Highlight ${target.title}`);
             const filename = await createHighlightItemFilename(node, item, itemIndex, node.items.length, blob);
             const folder = `${String(highlightIndex + 1).padStart(2, '0')}-${sanitizeZipSegment(target.title || node.title || target.id)}/`;
             await zipWriter.add(`${folder}${filename}`, new BlobReader(blob), { useWebWorkers: false });

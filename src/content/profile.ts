@@ -1,7 +1,14 @@
 import dayjs from 'dayjs';
 import { MediaType } from '../constants';
 import { getFilenameFromUrl, getMediaName } from './utils/filename';
-import { downloadResource, findAppId, getAllMediaFromPostId, openInNewTab } from './utils/fn';
+import {
+    assertAllowedMediaContentType,
+    assertValidMediaBlob,
+    downloadResource,
+    findAppId,
+    getAllMediaFromPostId,
+    openInNewTab,
+} from './utils/fn';
 import { storageCache } from './utils/storage';
 
 type ProfileTargetKind = 'p' | 'reel';
@@ -41,6 +48,7 @@ const PROFILE_AVATAR_CACHE_KEY = 'user_profile_pic_url';
 const PROFILE_AVATAR_HD_CACHE_KEY = 'user_profile_hd_pic_url_v2';
 const INSTAGRAM_BLUE = 'rgb(0, 149, 246)';
 const INSTAGRAM_BLUE_HOVER = 'rgb(24, 119, 242)';
+const INVALID_ZIP_SEGMENT_CHARS_RE = new RegExp(String.raw`[<>:"/\\|?*\x00-\x1F]`, 'g');
 export const PROFILE_AVATAR_ACTION_ATTRIBUTE = 'data-profile-avatar-action';
 
 const sleep = (ms: number) => new Promise<void>((resolve) => {
@@ -692,7 +700,7 @@ function shouldIncludeMedia(media: Record<string, any>, filter: ProfileBulkMedia
 }
 
 function sanitizeZipSegment(value: string) {
-    return value.replace(/[<>:"/\\|?*\x00-\x1F]/g, '_').replace(/\s+/g, ' ').trim() || 'media';
+    return value.replace(INVALID_ZIP_SEGMENT_CHARS_RE, '_').replace(/\s+/g, ' ').trim() || 'media';
 }
 
 function getBlobExtension(blob: Blob, isVideo: boolean) {
@@ -716,7 +724,11 @@ async function fetchMediaBlob(url: string, controls: ProfileBulkProgressDialog) 
         if (!response.ok) {
             throw new Error(`Failed to fetch media (${response.status})`);
         }
-        return response.blob();
+        const contentType = response.headers.get('content-type');
+        assertAllowedMediaContentType(contentType, 'Profile media');
+        const blob = await response.blob();
+        assertValidMediaBlob(blob, contentType, 'Profile media');
+        return blob;
     } finally {
         controls.clearAbortController(controller);
     }
@@ -842,16 +854,30 @@ async function downloadProfileAsFiles(
         for (let mediaIndex = 0; mediaIndex < mediaList.length; mediaIndex++) {
             const media = mediaList[mediaIndex];
             controls.setStatus(`Downloading ${targetIndex + 1}/${targets.length}: ${mediaIndex + 1}/${mediaList.length}`);
-            const success = await downloadResource({
-                url: media.url,
-                username: media.owner || getProfileUsername(),
-                datetime: media.taken_at ? dayjs.unix(media.taken_at) : undefined,
-                id: media.id || media.pk || media.origin_data?.id || getMediaName(media.url) || target.code,
-                index: storageCache.settings.setting_format_use_indexing && mediaList.length > 1 ? mediaIndex + 1 : undefined,
-                type: target.kind === 'reel' || media.product_type === 'clips' ? MediaType.Reel : MediaType.Post,
-            });
-            if (!success) {
-                throw new Error(`Failed to download /${target.kind}/${target.code}`);
+            controls.throwIfStopped();
+            await controls.waitIfPaused();
+
+            const controller = controls.createAbortController();
+            try {
+                const success = await downloadResource({
+                    url: media.url,
+                    username: media.owner || getProfileUsername(),
+                    datetime: media.taken_at ? dayjs.unix(media.taken_at) : undefined,
+                    id: media.id || media.pk || media.origin_data?.id || getMediaName(media.url) || target.code,
+                    index: storageCache.settings.setting_format_use_indexing && mediaList.length > 1 ? mediaIndex + 1 : undefined,
+                    type: target.kind === 'reel' || media.product_type === 'clips' ? MediaType.Reel : MediaType.Post,
+                    signal: controller.signal,
+                });
+                if (!success) {
+                    throw new Error(`Failed to download /${target.kind}/${target.code}`);
+                }
+            } catch (error: any) {
+                if (error?.name === 'AbortError') {
+                    throw error;
+                }
+                throw error;
+            } finally {
+                controls.clearAbortController(controller);
             }
             downloadedFiles += 1;
             await waitForThrottle(settings.throttleMs, controls);

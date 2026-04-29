@@ -1,5 +1,13 @@
 import type { ReelsMedia } from '../types/global';
-import { findValueByKey, saveHighlights, saveProfilePicture, saveProfileReel, saveReels, saveStories } from './fn';
+import {
+    findValueByKey,
+    getProfilePictureUrlFromApiData,
+    saveHighlights,
+    saveProfilePicture,
+    saveProfileReel,
+    saveReels,
+    saveStories
+} from './fn';
 import {
     CONFIG_LIST,
     DEFAULT_DATETIME_FORMAT,
@@ -55,6 +63,24 @@ async function addThreads(data: any[]) {
     await chrome.storage.local.set({ threads: Array.from(newMap) });
 }
 
+const allowedInstagramOrigins = new Set(['https://www.instagram.com']);
+
+function isAllowedInstagramSender(sender: chrome.runtime.MessageSender) {
+    return Boolean(sender.origin && allowedInstagramOrigins.has(sender.origin));
+}
+
+function parseProfilePictureMessage(data: unknown) {
+    if (typeof data !== 'string') return undefined;
+
+    try {
+        const parsedData = JSON.parse(data);
+        return getProfilePictureUrlFromApiData(parsedData) ? parsedData : undefined;
+    } catch (error) {
+        console.log(`Ignored malformed profile picture data: ${error}`);
+        return undefined;
+    }
+}
+
 chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => {
     // console.log(message, sender);
     const { type, data, api } = message;
@@ -81,7 +107,15 @@ chrome.runtime.onMessageExternal.addListener((message, sender, sendResponse) => 
 
     (async () => {
         if (type === 'profile_pic') {
-            await saveProfilePicture(JSON.parse(data));
+            if (!isAllowedInstagramSender(sender)) {
+                sendResponse();
+                return;
+            }
+
+            const parsedData = parseProfilePictureMessage(data);
+            if (parsedData) {
+                await saveProfilePicture(parsedData);
+            }
         } else if (type === 'stories') {
             const {
                 stories_user_ids,

@@ -1,11 +1,12 @@
 import dayjs from 'dayjs';
-import { afterEach, beforeEach, describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { MediaType } from '../constants';
 import { storageCache } from './utils/storage';
 import { __highlightsTestApi, ensureHighlightsBatchDownloadButton } from './highlights';
 
 const {
     createHighlightItemFilename,
+    downloadHighlightsAsZip,
     getHighlightBlobExtension,
     getHighlightMediaUrl,
     getHighlightTargets,
@@ -39,6 +40,7 @@ describe('highlights batch helpers', () => {
     });
 
     afterEach(() => {
+        vi.unstubAllGlobals();
         document.body.innerHTML = '';
     });
 
@@ -143,5 +145,16 @@ describe('highlights batch helpers', () => {
     it('sanitizes ZIP path segments', () => {
         expect(sanitizeZipSegment('  bad<>:"/\\|?*\n name  ')).toBe('bad__________ name');
         expect(sanitizeZipSegment('   ')).toBe('highlight');
+    });
+
+    it('rejects non-media responses before adding highlight files to the ZIP', async () => {
+        vi.stubGlobal('fetch', vi.fn(async () => new Response('<html>login</html>', {
+            headers: { 'Content-Type': 'text/html' },
+        })));
+
+        await expect(downloadHighlightsAsZip([{
+            node: makeHighlightNode(),
+            target: { href: '/stories/highlights/123/', id: '123', title: 'Beach' },
+        }])).rejects.toThrow('Highlight Beach response was not media (text/html).');
     });
 });
