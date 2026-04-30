@@ -46,6 +46,11 @@ const PROFILE_SCROLL_STABLE_ROUNDS = 3;
 const PROFILE_SCROLL_MAX_ROUNDS = 80;
 const PROFILE_AVATAR_CACHE_KEY = 'user_profile_pic_url';
 const PROFILE_AVATAR_HD_CACHE_KEY = 'user_profile_hd_pic_url_v2';
+const PROFILE_USER_ID_CACHE_KEY = 'profile_user_id_by_username';
+const PROFILE_AVATAR_GRAPHQL_DOC_ID = '9539110062771438';
+const SEARCH_GRAPHQL_DOC_ID = '9153895011291216';
+const WEB_PROFILE_APP_ID = '936619743392459';
+const SEARCH_APP_ID = '672145893218637';
 const INSTAGRAM_BLUE = 'rgb(0, 149, 246)';
 const INSTAGRAM_BLUE_HOVER = 'rgb(24, 119, 242)';
 const INVALID_ZIP_SEGMENT_CHARS_RE = new RegExp(String.raw`[<>:"/\\|?*\x00-\x1F]`, 'g');
@@ -54,6 +59,14 @@ export const PROFILE_AVATAR_ACTION_ATTRIBUTE = 'data-profile-avatar-action';
 const sleep = (ms: number) => new Promise<void>((resolve) => {
     window.setTimeout(resolve, ms);
 });
+
+function normalizeUsername(username: string) {
+    return username.trim().toLowerCase();
+}
+
+function usernameMatches(left: unknown, right: string) {
+    return typeof left === 'string' && normalizeUsername(left) === normalizeUsername(right);
+}
 
 function getProfileUsername() {
     const arr = window.location.pathname.split('/').filter((e) => e);
@@ -93,13 +106,10 @@ function isLikelyLowResolutionAvatarUrl(url: string) {
 function findProfileAvatarUser(obj: any): any {
     if (!obj || typeof obj !== 'object') return undefined;
     if (
-        typeof obj.username === 'string' &&
-        (
-            typeof obj.profile_pic_url_hd === 'string' ||
-            typeof obj.hd_profile_pic_url_info?.url === 'string' ||
-            Array.isArray(obj.hd_profile_pic_versions) ||
-            typeof obj.profile_pic_url === 'string'
-        )
+        typeof obj.profile_pic_url_hd === 'string' ||
+        typeof obj.hd_profile_pic_url_info?.url === 'string' ||
+        Array.isArray(obj.hd_profile_pic_versions) ||
+        typeof obj.profile_pic_url === 'string'
     ) {
         return obj;
     }
@@ -151,8 +161,44 @@ function getProfileAvatarUrlFromApiData(data: Record<string, any>) {
 
 function getProfileUserIdFromApiData(data: Record<string, any>) {
     const user = findProfileAvatarUser(data);
-    const id = user?.id || user?.pk;
+    const id = user?.id || user?.pk || user?.pk_id;
     return typeof id === 'string' || typeof id === 'number' ? String(id) : undefined;
+}
+
+function getUserIdFromRecord(record: Record<string, any>) {
+    const userId = record.id || record.pk || record.pk_id || record.user_id;
+    return typeof userId === 'string' || typeof userId === 'number' ? String(userId) : undefined;
+}
+
+function findUserIdByUsername(value: unknown, username: string): string | undefined {
+    if (Array.isArray(value)) {
+        for (const item of value) {
+            const result = findUserIdByUsername(item, username);
+            if (result) return result;
+        }
+        return undefined;
+    }
+
+    if (!value || typeof value !== 'object') return undefined;
+    const record = value as Record<string, any>;
+
+    if (usernameMatches(record.username, username)) {
+        const userId = getUserIdFromRecord(record);
+        if (userId) return userId;
+    }
+
+    for (const nestedValue of Object.values(record)) {
+        const result = findUserIdByUsername(nestedValue, username);
+        if (result) return result;
+    }
+}
+
+function getCookieValue(name: string) {
+    return document.cookie
+        .split(';')
+        .map((cookie) => cookie.trim())
+        .find((cookie) => cookie.startsWith(`${name}=`))
+        ?.slice(name.length + 1);
 }
 
 async function cacheProfileAvatarUrl(username: string, url: string, quality: 'high' | 'fallback' = 'high') {
@@ -172,8 +218,205 @@ async function cacheProfileAvatarUrl(username: string, url: string, quality: 'hi
     });
 }
 
+async function cacheProfileUserId(username: string, userId: string) {
+    const userIdStorage = await chrome.storage.local.get([PROFILE_USER_ID_CACHE_KEY]);
+    const data = new Map(userIdStorage[PROFILE_USER_ID_CACHE_KEY] || []);
+    data.set(normalizeUsername(username), userId);
+
+    await chrome.storage.local.set({
+        [PROFILE_USER_ID_CACHE_KEY]: [...data],
+    });
+}
+
+async function getCachedProfileUserId(username: string) {
+    const userIdStorage = await chrome.storage.local.get([PROFILE_USER_ID_CACHE_KEY]);
+    const data = new Map(userIdStorage[PROFILE_USER_ID_CACHE_KEY] || []);
+    const cachedUserId = data.get(normalizeUsername(username)) || data.get(username);
+
+    return typeof cachedUserId === 'string' ? cachedUserId : undefined;
+}
+
+async function fetchProfileAvatarData(endpoint: string, appId = findAppId() || WEB_PROFILE_APP_ID) {
+    const response = await fetch(endpoint, {
+        credentials: 'include',
+        headers: {
+            Accept: '*/*',
+            'X-IG-App-ID': appId,
+        },
+        mode: 'cors',
+    });
+
+    if (!response.ok) {
+        throw new Error(`Instagram profile request failed with status ${response.status}`);
+    }
+
+    return response.json();
+}
+
+async function fetchInstagramJson(endpoint: string, headers: Record<string, string> = {}, init: RequestInit = {}) {
+    const response = await fetch(endpoint, {
+        ...init,
+        credentials: 'include',
+        headers: {
+            Accept: 'application/json, text/plain, */*',
+            ...headers,
+        },
+        mode: 'cors',
+    });
+
+    if (!response.ok) {
+        throw new Error(`Instagram request failed with status ${response.status}`);
+    }
+
+    return response.json();
+}
+
+async function getUserIdFromWebProfile(username: string) {
+    const data = await fetchInstagramJson(
+        `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`,
+        { 'X-IG-App-ID': findAppId() || WEB_PROFILE_APP_ID }
+    );
+    const directUserId = getUserIdFromRecord(data?.data?.user || {});
+
+    return directUserId || findUserIdByUsername(data, username) || getProfileUserIdFromApiData(data);
+}
+
+async function getUserIdFromProfilePage(username: string) {
+    const response = await fetch(`https://www.instagram.com/${encodeURIComponent(username)}/`, {
+        credentials: 'include',
+        headers: {
+            Accept: 'text/html,application/xhtml+xml',
+        },
+        mode: 'cors',
+    });
+
+    if (!response.ok) {
+        throw new Error(`Instagram profile page request failed with status ${response.status}`);
+    }
+
+    const match = (await response.text()).match(/"user_id":"(\d+)"/);
+    if (match?.[1]) return match[1];
+
+    throw new Error('user_id not found in profile page');
+}
+
+async function getUserIdFromInstagramGraphQL(username: string) {
+    const body = new URLSearchParams({
+        av: getCookieValue('ds_user_id') || '0',
+        __d: 'www',
+        variables: JSON.stringify({
+            data: {
+                context: 'blended',
+                include_reel: 'true',
+                query: username.trim(),
+                rank_token: '',
+                search_surface: 'web_top_search',
+            },
+            hasQuery: true,
+        }),
+        doc_id: SEARCH_GRAPHQL_DOC_ID,
+    });
+    const csrfToken = getCookieValue('csrftoken');
+    const headers: Record<string, string> = {
+        'Content-Type': 'application/x-www-form-urlencoded',
+        'X-FB-Friendly-Name': 'PolarisSearchBoxRefetchableQuery',
+        'X-IG-App-ID': SEARCH_APP_ID,
+    };
+
+    if (csrfToken) {
+        headers['X-CSRFToken'] = csrfToken;
+    }
+
+    const data = await fetchInstagramJson('https://www.instagram.com/graphql/query', headers, {
+        body,
+        method: 'POST',
+    });
+    const userId = findUserIdByUsername(data, username);
+
+    if (userId) return userId;
+    throw new Error('User ID not found in Instagram GraphQL response');
+}
+
+async function getUserIdFromTopSearch(username: string) {
+    const data = await fetchInstagramJson(
+        `https://www.instagram.com/web/search/topsearch/?context=blended&query=${encodeURIComponent(username)}&rank_token=0.3953592318270893&count=1`
+    );
+    const userId = findUserIdByUsername(data, username);
+
+    if (userId) return userId;
+    throw new Error('Instagram Account not found in TopSearch API response');
+}
+
+async function getUserIdFromInstagramSearch(username: string) {
+    const timezoneOffset = String(new Date().getTimezoneOffset() * -60);
+    const data = await fetchInstagramJson(
+        `https://i.instagram.com/api/v1/users/search/?q=${encodeURIComponent(username.toUpperCase())}&count=30&timezone_offset=${timezoneOffset}`
+    );
+    const userId = findUserIdByUsername(data, username);
+
+    if (userId) return userId;
+    throw new Error('Instagram Account not found in Instagram Search API response');
+}
+
+async function getUserId(username: string) {
+    const cachedUserId = await getCachedProfileUserId(username);
+    if (cachedUserId) return cachedUserId;
+
+    const methods = [
+        getUserIdFromProfilePage,
+        getUserIdFromInstagramGraphQL,
+        getUserIdFromWebProfile,
+        getUserIdFromTopSearch,
+        getUserIdFromInstagramSearch,
+    ];
+    let lastError: unknown;
+
+    for (const method of methods) {
+        try {
+            const userId = await method(username);
+            if (userId) {
+                await cacheProfileUserId(username, userId);
+                return userId;
+            }
+        } catch (error) {
+            lastError = error;
+            console.log(`${method.name} failed. Trying alternative methods...`, error);
+        }
+    }
+
+    throw new Error(lastError instanceof Error ? lastError.message : 'Error retrieving Instagram user ID');
+}
+
+async function fetchProfileAvatarUrlFromGraphQL(username: string) {
+    const userId = await getUserId(username);
+    const variables = encodeURIComponent(JSON.stringify({
+        id: userId,
+        render_surface: 'PROFILE',
+    }));
+    const generatedUrl = `https://www.instagram.com/graphql/query/?doc_id=${PROFILE_AVATAR_GRAPHQL_DOC_ID}&variables=${variables}`;
+    const data = await fetchProfileAvatarData(generatedUrl);
+    const highResolutionUrl = getHighResolutionProfileAvatarUrlFromApiData(data);
+    const fallbackUrl = getProfileAvatarUrlFromApiData(data);
+
+    if (highResolutionUrl) {
+        await cacheProfileAvatarUrl(username, highResolutionUrl);
+        return highResolutionUrl;
+    }
+
+    if (fallbackUrl) {
+        await cacheProfileAvatarUrl(username, fallbackUrl, 'fallback');
+        return fallbackUrl;
+    }
+}
+
 async function fetchProfileAvatarUrl(username: string) {
-    const appId = findAppId() || '936619743392459';
+    try {
+        const graphQLUrl = await fetchProfileAvatarUrlFromGraphQL(username);
+        if (graphQLUrl) return graphQLUrl;
+    } catch (error) {
+        console.log(`Failed to fetch profile avatar from GraphQL profile query: ${error}`);
+    }
+
     const endpoints = [
         `https://www.instagram.com/api/v1/users/web_profile_info/?username=${encodeURIComponent(username)}`,
         `https://www.instagram.com/api/v1/feed/user/${encodeURIComponent(username)}/username/`,
@@ -186,17 +429,7 @@ async function fetchProfileAvatarUrl(username: string) {
         if (seenEndpoints.has(endpoint)) continue;
         seenEndpoints.add(endpoint);
         try {
-            const response = await fetch(endpoint, {
-                credentials: 'include',
-                headers: {
-                    Accept: '*/*',
-                    'X-IG-App-ID': appId,
-                },
-                mode: 'cors',
-            });
-            if (!response.ok) continue;
-
-            const data = await response.json();
+            const data = await fetchProfileAvatarData(endpoint);
             const highResolutionUrl = getHighResolutionProfileAvatarUrlFromApiData(data);
             const fallbackCandidate = getProfileAvatarUrlFromApiData(data);
             const userId = getProfileUserIdFromApiData(data);

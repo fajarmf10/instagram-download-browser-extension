@@ -199,7 +199,7 @@ describe('profile bulk helpers', () => {
         })).toBe(resizedUrl);
     });
 
-    it('fetches and caches HD avatars when the stored avatar is low resolution', async () => {
+    it('fetches and caches HD avatars from the profile GraphQL query', async () => {
         history.pushState({}, '', '/jkt48.lana.a/');
         document.body.innerHTML = `
             <script>"X-IG-App-ID":"123456"</script>
@@ -222,32 +222,49 @@ describe('profile bulk helpers', () => {
                 },
             },
         });
-        const fetchMock = vi.fn(async () => Response.json({
-            data: {
-                user: {
-                    username: 'jkt48.lana.a',
-                    profile_pic_url: 'https://cdn.example/low.jpg',
-                    profile_pic_url_hd: 'https://cdn.example/hd.jpg',
+        const fetchMock = vi.fn(async (url: string) => {
+            if (url === 'https://www.instagram.com/jkt48.lana.a/') {
+                return new Response('"user_id":"123456"');
+            }
+
+            return Response.json({
+                data: {
+                    user: {
+                        username: 'jkt48.lana.a',
+                        profile_pic_url: 'https://cdn.example/low.jpg',
+                        profile_pic_url_hd: 'https://cdn.example/hd.jpg',
+                    },
                 },
-            },
-        }));
+            });
+        });
         vi.stubGlobal('fetch', fetchMock);
 
         await expect(resolveProfileAvatarUrl('jkt48.lana.a')).resolves.toBe('https://cdn.example/hd.jpg');
-        expect(fetchMock).toHaveBeenCalledWith(
-            'https://www.instagram.com/api/v1/users/web_profile_info/?username=jkt48.lana.a',
+        expect(fetchMock).toHaveBeenNthCalledWith(
+            1,
+            'https://www.instagram.com/jkt48.lana.a/',
+            expect.objectContaining({
+                credentials: 'include',
+            })
+        );
+        expect(fetchMock).toHaveBeenNthCalledWith(
+            2,
+            expect.stringContaining('https://www.instagram.com/graphql/query/?doc_id=9539110062771438'),
             expect.objectContaining({
                 credentials: 'include',
                 headers: expect.objectContaining({ 'X-IG-App-ID': '123456' }),
             })
         );
         expect(set).toHaveBeenCalledWith({
+            profile_user_id_by_username: [['jkt48.lana.a', '123456']],
+        });
+        expect(set).toHaveBeenCalledWith({
             user_profile_hd_pic_url_v2: [['jkt48.lana.a', 'https://cdn.example/hd.jpg']],
             user_profile_pic_url: [['jkt48.lana.a', 'https://cdn.example/hd.jpg']],
         });
     });
 
-    it('checks the user-info endpoint before falling back to a low profile avatar URL', async () => {
+    it('checks the profile GraphQL endpoint before falling back to a low profile avatar URL', async () => {
         history.pushState({}, '', '/jkt48.lana.a/');
         const set = vi.fn(async () => undefined);
         vi.stubGlobal('chrome', {
@@ -261,16 +278,8 @@ describe('profile bulk helpers', () => {
             },
         });
         const fetchMock = vi.fn(async (url: string) => {
-            if (url.includes('/web_profile_info/')) {
-                return Response.json({
-                    data: {
-                        user: {
-                            id: '123456',
-                            username: 'jkt48.lana.a',
-                            profile_pic_url: 'https://cdn.example/avatar.jpg?stp=dst-jpg_s150x150_tt6&ccb=7-5',
-                        },
-                    },
-                });
+            if (url === 'https://www.instagram.com/jkt48.lana.a/') {
+                return new Response('"user_id":"123456"');
             }
 
             return Response.json({
@@ -287,7 +296,7 @@ describe('profile bulk helpers', () => {
         await expect(resolveProfileAvatarUrl('jkt48.lana.a')).resolves.toBe('https://cdn.example/avatar-original.jpg');
         expect(fetchMock).toHaveBeenNthCalledWith(
             2,
-            'https://www.instagram.com/api/v1/users/123456/info/',
+            expect.stringContaining('https://www.instagram.com/graphql/query/?doc_id=9539110062771438'),
             expect.any(Object)
         );
         expect(set).toHaveBeenCalledWith({
