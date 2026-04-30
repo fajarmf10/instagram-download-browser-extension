@@ -4,11 +4,20 @@ import {
     DEFAULT_FILENAME_FORMAT,
     DEFAULT_PROFILE_BULK_MEDIA_FILTER,
     DEFAULT_PROFILE_BULK_THROTTLE_MS,
+    MESSAGE_FETCH_PROFILE_PICTURE_HD,
     MESSAGE_OPEN_URL,
     MESSAGE_ZIP_DOWNLOAD
 } from '../constants';
 import type { ReelsMedia } from '../types/global';
-import { findValueByKey, saveHighlights, saveProfilePicture, saveProfileReel, saveReels, saveStories } from './fn';
+import {
+    fetchInstagramProfilePictureHdUrl,
+    findValueByKey,
+    saveHighlights,
+    saveProfilePicture,
+    saveProfileReel,
+    saveReels,
+    saveStories
+} from './fn';
 
 browser.runtime.onInstalled.addListener(async () => {
     // 1. Initialize default settings
@@ -233,6 +242,19 @@ browser.webRequest.onBeforeRequest.addListener(
     ['blocking']
 );
 
+async function getInstagramCookie(name: string) {
+    const cookie = await browser.cookies.get({ url: 'https://www.instagram.com/', name });
+    return cookie?.value || null;
+}
+
+function getProfilePictureUserId(data: unknown) {
+    if (typeof data === 'string') return data;
+    if (data && typeof data === 'object' && typeof (data as Record<string, unknown>).userId === 'string') {
+        return (data as Record<string, string>).userId;
+    }
+    return null;
+}
+
 browser.runtime.onMessage.addListener(async (message, sender) => {
     console.log(message, sender);
     const { type, data } = message;
@@ -240,6 +262,17 @@ browser.runtime.onMessage.addListener(async (message, sender) => {
         case MESSAGE_OPEN_URL:
             await browser.tabs.create({ url: data, index: sender.tab!.index + 1 });
             break;
+        case MESSAGE_FETCH_PROFILE_PICTURE_HD:
+            const userId = getProfilePictureUserId(data);
+            if (!userId) {
+                return { url: null };
+            }
+            try {
+                return { url: await fetchInstagramProfilePictureHdUrl(userId, getInstagramCookie) };
+            } catch (error) {
+                console.log(`Could not fetch HD profile picture: ${error}`);
+                return { url: null };
+            }
         case MESSAGE_ZIP_DOWNLOAD:
             const { BlobReader, BlobWriter, TextReader, ZipWriter } = await import('@zip.js/zip.js');
             const zipFileWriter = new BlobWriter();

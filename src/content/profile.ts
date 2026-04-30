@@ -1,5 +1,5 @@
 import dayjs from 'dayjs';
-import { MediaType } from '../constants';
+import { MESSAGE_FETCH_PROFILE_PICTURE_HD, MediaType } from '../constants';
 import { getFilenameFromUrl, getMediaName } from './utils/filename';
 import {
     assertAllowedMediaContentType,
@@ -36,6 +36,10 @@ interface ProfileBulkProgressDialog {
     setStatus: (status: string) => void;
     throwIfStopped: () => void;
     waitIfPaused: () => Promise<void>;
+}
+
+interface ProfilePictureResponse {
+    url?: string | null;
 }
 
 const PROFILE_BULK_DOWNLOAD_BUTTON_CLASS = 'profile-bulk-download-btn';
@@ -130,7 +134,7 @@ function getProfileAvatarCandidatesFromApiData(data: Record<string, any>) {
 }
 
 function normalizeAvatarCandidateUrl(url: string) {
-    return url;
+    return url.replace(/&amp;/g, '&');
 }
 
 function getHighResolutionProfileAvatarUrlFromApiData(data: Record<string, any>) {
@@ -151,8 +155,24 @@ function getProfileAvatarUrlFromApiData(data: Record<string, any>) {
 
 function getProfileUserIdFromApiData(data: Record<string, any>) {
     const user = findProfileAvatarUser(data);
-    const id = user?.id || user?.pk;
+    const id = user?.id || user?.pk || user?.pk_id;
     return typeof id === 'string' || typeof id === 'number' ? String(id) : undefined;
+}
+
+function fetchHighResolutionProfileAvatarUrl(userId: string) {
+    return chrome.runtime
+        .sendMessage({
+            data: { userId },
+            type: MESSAGE_FETCH_PROFILE_PICTURE_HD,
+        })
+        .then((response?: ProfilePictureResponse) => {
+            const url = response?.url;
+            return typeof url === 'string' && url.trim() ? normalizeAvatarCandidateUrl(url) : undefined;
+        })
+        .catch((error) => {
+            console.log(`Could not fetch HD profile picture: ${error}`);
+            return undefined;
+        });
 }
 
 async function cacheProfileAvatarUrl(username: string, url: string, quality: 'high' | 'fallback' = 'high') {
@@ -201,6 +221,12 @@ async function fetchProfileAvatarUrl(username: string) {
             const fallbackCandidate = getProfileAvatarUrlFromApiData(data);
             const userId = getProfileUserIdFromApiData(data);
             if (userId) {
+                const mobileApiUrl = await fetchHighResolutionProfileAvatarUrl(userId);
+                if (mobileApiUrl) {
+                    await cacheProfileAvatarUrl(username, mobileApiUrl);
+                    return mobileApiUrl;
+                }
+
                 const userInfoEndpoint = `https://www.instagram.com/api/v1/users/${encodeURIComponent(userId)}/info/`;
                 if (!seenEndpoints.has(userInfoEndpoint) && !endpoints.includes(userInfoEndpoint)) {
                     endpoints.splice(i + 1, 0, userInfoEndpoint);
